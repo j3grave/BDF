@@ -1,0 +1,6 @@
+duckdb>=1.4
+polars>=1.37
+pyarrow
+pandas
+matplotlib
+jupyter
