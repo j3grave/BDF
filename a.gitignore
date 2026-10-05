@@ -1,0 +1,25 @@
+# Dados descarregados e ficheiros gerados pelo notebook
+ml-latest-small/
+ml-latest-small.zip
+parquet/
+output/
+lab_results.zip
+*.parquet
+*.duckdb
+*.duckdb.wal
+*.csv
+
+# Ambiente Python
+.venv/
+venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# Sistema operativo e editores
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Credenciais (nunca versionar)
+.env
+*.pem
