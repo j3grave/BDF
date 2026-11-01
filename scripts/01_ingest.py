@@ -75,7 +75,7 @@ def main():
         normalize_csv(src, csv_dir)
 
     for f in sorted(csv_dir.glob('*.csv')):
-        n = duckdb.sql(f"SELECT COUNT(*) FROM read_csv('{f.as_posix()}')").fetchone()[0]
+        n = duckdb.execute(f"SELECT COUNT(*) FROM read_csv('{f.as_posix()}')").fetchone()[0]
         print(f'  {f.name:12} {n:>12,} linhas')
 
 

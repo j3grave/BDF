@@ -57,7 +57,7 @@ Requer Python 3.10 ou superior.
 ```bash
 git clone https://github.com/j3grave/BDF.git
 cd BDF
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 jupyter lab                      # ou abrir o notebook no VS Code
@@ -82,10 +82,29 @@ Pipeline reprodutível que descarrega o MovieLens, converte-o para Parquet com D
 das queries. Funciona com três tamanhos do dataset: `small` (100 mil ratings), `1m` (1 milhão)
 e `32m` (32 milhões).
 
-### Como correr
+### Ambiente
+
+Requer Python 3.10 ou superior. Na primeira vez, na pasta do repositório, cria-se um ambiente virtual
+e instalam-se as dependências:
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Nas sessões seguintes basta ativar o ambiente (`source .venv/bin/activate`). Com o ambiente ativo,
+`python` é o do `.venv`, que já tem o DuckDB e o PyYAML instalados. Para confirmar:
+
+```bash
+python -c "import duckdb, yaml; print('duckdb', duckdb.__version__)"
+```
+
+### Como correr
+
+Com o ambiente ativo:
+
+```bash
 python run_pipeline.py --dataset small                 # todos os passos
 python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
 ```
