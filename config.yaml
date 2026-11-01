@@ -1,0 +1,6 @@
+# Configuração do pipeline local (Fase 1).
+# O dataset pode ser alterado na linha de comandos: python run_pipeline.py --dataset 1m
+
+dataset: small          # small | 1m | 32m
+data_dir: data          # downloads, CSV normalizados e Parquet: data/<dataset>/...
+results_dir: results    # tamanhos, tempos e benchmarks

@@ -4,6 +4,8 @@ ml-latest-small.zip
 parquet/
 output/
 lab_results.zip
+data/
+results/
 *.parquet
 *.duckdb
 *.duckdb.wal

@@ -1,0 +1,21 @@
+-- 10_flag_bots.sql — ESQUELETO, ainda sem regras.
+-- As regras para identificar utilizadores suspeitos (bots) vão ser definidas pelo Luís.
+-- Enquanto este ficheiro só tiver comentários, o 03_benchmark.py ignora-o.
+--
+-- Parâmetros disponíveis: ${ratings}, ${movies}
+-- Colunas de ${ratings}: userId, movieId, rating, timestamp, year
+--
+-- Estrutura sugerida:
+--
+-- WITH user_activity AS (
+--     SELECT userId,
+--            COUNT(*)                          AS num_ratings,
+--            -- ... métricas por utilizador (ex.: ratings por dia, variância, intervalo entre ratings)
+--     FROM ${ratings}
+--     GROUP BY userId
+-- )
+-- SELECT userId,
+--        -- ... uma coluna booleana por regra (rule_1, rule_2, ...)
+--        -- ... is_bot = combinação das regras
+-- FROM user_activity
+-- WHERE ...;

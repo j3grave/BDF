@@ -76,6 +76,57 @@ BDF/
 Ao executar o notebook são criadas as pastas `ml-latest-small/` (CSV), `parquet/` e `output/`
 (base de dados `movielens.duckdb`), que não são versionadas.
 
+## Pipeline local
+
+Pipeline reprodutível que descarrega o MovieLens, converte-o para Parquet com DuckDB e mede o tempo
+das queries. Funciona com três tamanhos do dataset: `small` (100 mil ratings), `1m` (1 milhão)
+e `32m` (32 milhões).
+
+### Como correr
+
+```bash
+pip install -r requirements.txt
+python run_pipeline.py --dataset small                 # todos os passos
+python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
+```
+
+Os passos são `ingest`, `parquet` e `benchmark`. Sem `--dataset` usa-se o valor de `config.yaml`.
+Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_to_parquet.py --dataset 1m`.
+
+| Passo | Script | O que faz |
+|---|---|---|
+| `ingest` | `scripts/01_ingest.py` | Descarrega o zip do GroupLens, só se ainda não existir, e normaliza para CSV com o esquema comum (`ratings`: userId, movieId, rating, timestamp; `movies`: movieId, title, genres). Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
+| `parquet` | `scripts/02_to_parquet.py` | `COPY` do DuckDB para Parquet sem partição e `ratings` particionado por ano (`PARTITION_BY year`, ano em UTC). Regista os tamanhos do CSV e do Parquet. |
+| `benchmark` | `scripts/03_benchmark.py` | Corre cada query de `sql/` 3 vezes sobre os dois formatos de Parquet e regista a mediana do tempo e o n.º de linhas. |
+
+Nas queries de `sql/`, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet. Os dois
+formatos têm as mesmas colunas, incluindo `year`. `10_flag_bots.sql` é um esqueleto e é ignorado
+enquanto só tiver comentários.
+
+### Estrutura de pastas
+
+```
+BDF/
+├── config.yaml                 # dataset (small | 1m | 32m), data_dir, results_dir
+├── run_pipeline.py             # ponto de entrada
+├── scripts/
+│   ├── common.py               # configuração, caminhos e registo de resultados
+│   ├── 01_ingest.py
+│   ├── 02_to_parquet.py
+│   └── 03_benchmark.py
+├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
+├── data/<dataset>/             # não versionado
+│   ├── raw/                    # zip e ficheiros originais
+│   ├── csv/                    # CSV normalizados
+│   └── parquet/                # <tabela>.parquet e ratings_by_year/year=AAAA/
+└── results/                    # não versionado
+    ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano
+    ├── pipeline_runs.csv       # tempo de cada passo
+    └── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
+```
+
+O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
+
 ## Tecnologias
 
 | Ferramenta | Função no projeto |
