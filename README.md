@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/33067044/README.md)
 # Big Data Foundations — Lab: Parquet, DuckDB, Polars e Arrow
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/j3grave/BDF/blob/main/Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb)
@@ -68,9 +67,9 @@ jupyter lab                      # ou abrir o notebook no VS Code
 
 ```
 BDF/
-├── Lab_Parquet_DuckDB_Polars_Arrow_EDA.ipynb   # notebook principal
-├── requirements.txt                            # dependências Python
-├── .gitignore                                  # exclui dados e ficheiros gerados
+├── Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb   # notebook principal
+├── requirements.txt                                       # dependências Python
+├── .gitignore                                             # exclui dados e ficheiros gerados
 └── README.md
 ```
 
