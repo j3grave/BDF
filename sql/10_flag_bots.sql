@@ -5,6 +5,12 @@
 -- Parâmetros disponíveis: ${ratings}, ${movies}
 -- Colunas de ${ratings}: userId, movieId, rating, timestamp, year
 --
+-- Ligação às aulas (a ter em conta ao escrever as regras):
+-- - Formato colunar: usar só as colunas necessárias (evitar SELECT *) para o DuckDB
+--   ler menos dados do Parquet.
+-- - Partições: se uma regra olhar só para alguns anos, filtrar por year no WHERE
+--   permite saltar as pastas dos restantes anos (partition pruning).
+--
 -- Estrutura sugerida:
 --
 -- WITH user_activity AS (
