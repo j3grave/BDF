@@ -18,6 +18,7 @@ STEPS = {
     'ingest': 'scripts/01_ingest.py',
     'parquet': 'scripts/02_to_parquet.py',
     'benchmark': 'scripts/03_benchmark.py',
+    'eda': 'scripts/04_eda.py',
 }
 
 

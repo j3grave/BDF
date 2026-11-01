@@ -109,7 +109,7 @@ python run_pipeline.py --dataset small                 # todos os passos
 python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
 ```
 
-Os passos são `ingest`, `parquet` e `benchmark`. Sem `--dataset` usa-se o valor de `config.yaml`.
+Os passos são `ingest`, `parquet`, `benchmark` e `eda`. Sem `--dataset` usa-se o valor de `config.yaml`.
 Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_to_parquet.py --dataset 1m`.
 
 | Passo | Script | O que faz |
@@ -117,6 +117,7 @@ Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_
 | `ingest` | `scripts/01_ingest.py` | Descarrega o zip do GroupLens, só se ainda não existir, e normaliza para CSV com o esquema comum (`ratings`: userId, movieId, rating, timestamp; `movies`: movieId, title, genres). Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
 | `parquet` | `scripts/02_to_parquet.py` | `COPY` do DuckDB para Parquet sem partição e `ratings` particionado por ano (`PARTITION_BY year`, ano em UTC). Regista os tamanhos do CSV e do Parquet. |
 | `benchmark` | `scripts/03_benchmark.py` | Corre cada query de `sql/` 3 vezes sobre os dois formatos de Parquet e regista a mediana do tempo e o n.º de linhas. |
+| `eda` | `scripts/04_eda.py` | Análise exploratória com agregações no DuckDB: indicadores, qualidade das tabelas, 10 figuras (paleta NOVA IMS) e relatório em Markdown. |
 
 Nas queries de `sql/`, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet. Os dois
 formatos têm as mesmas colunas, incluindo `year`. `10_flag_bots.sql` é um esqueleto e é ignorado
@@ -132,7 +133,8 @@ BDF/
 │   ├── common.py               # configuração, caminhos e registo de resultados
 │   ├── 01_ingest.py
 │   ├── 02_to_parquet.py
-│   └── 03_benchmark.py
+│   ├── 03_benchmark.py
+│   └── 04_eda.py
 ├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
 ├── data/<dataset>/             # não versionado
 │   ├── raw/                    # zip e ficheiros originais
@@ -141,7 +143,8 @@ BDF/
 └── results/                    # não versionado
     ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
     ├── pipeline_runs.csv       # tempo de cada passo
-    └── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
+    ├── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
+    └── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
 ```
 
 O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
