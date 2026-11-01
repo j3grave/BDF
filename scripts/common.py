@@ -59,9 +59,23 @@ def size_on_disk(path):
 
 
 def append_row(csv_path, row):
-    """Acrescenta uma linha a um CSV de resultados, criando o cabeçalho se for novo."""
+    """Acrescenta uma linha a um CSV de resultados, criando o cabeçalho se for novo.
+
+    Se o ficheiro existir com outras colunas, é reescrito com as colunas novas (vazias nas linhas antigas).
+    """
     csv_path = Path(csv_path)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+    if csv_path.exists():
+        with csv_path.open(newline='') as f:
+            reader = csv.DictReader(f)
+            old_fields, old_rows = reader.fieldnames or [], list(reader)
+        if old_fields != list(row):
+            fields = list(row) + [c for c in old_fields if c not in row]
+            with csv_path.open('w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fields, restval='')
+                writer.writeheader()
+                writer.writerows(old_rows)
+            row = {c: row.get(c, '') for c in fields}
     new = not csv_path.exists()
     with csv_path.open('a', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=list(row))
