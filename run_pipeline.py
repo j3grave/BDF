@@ -25,6 +25,16 @@ import sys
 import time
 from pathlib import Path
 
+# Versão mínima de Python: o polars>=1.37 do requirements.txt não instala abaixo do 3.10.
+# Verificamos já aqui, antes de importar o resto, para o erro ser claro em vez de um
+# ImportError ou SyntaxError difícil de perceber mais à frente.
+PYTHON_MINIMO = (3, 10)
+if sys.version_info < PYTHON_MINIMO:
+    sys.exit(f'Erro: este pipeline requer Python {PYTHON_MINIMO[0]}.{PYTHON_MINIMO[1]} ou superior, '
+             f'mas está a correr com Python {sys.version.split()[0]} ({sys.executable}).\n'
+             'Cria o ambiente com uma versão mais recente, por exemplo "python3.12 -m venv .venv", '
+             'e vê a secção "Ambiente" do README.')
+
 # O common.py está na pasta scripts/. Acrescentamo-la à lista de pastas onde o Python
 # procura módulos, para o "from common import ..." funcionar a partir da raiz.
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts'))

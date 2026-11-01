@@ -84,11 +84,38 @@ e `32m` (32 milhões).
 
 ### Ambiente
 
-Requer Python 3.10 ou superior. Na primeira vez, na pasta do repositório, cria-se um ambiente virtual
-e instalam-se as dependências:
+Requer **Python 3.10 ou superior** (recomenda-se 3.12). O limite vem do `polars>=1.37`, que não
+instala em Python 3.9; o DuckDB e o PyYAML aceitam versões mais antigas. Com 3.10 ou 3.11 a instalação
+funciona, mas o pip escolhe versões um pouco mais antigas de numpy, pandas, matplotlib e pyarrow,
+porque as mais recentes já exigem 3.11 ou 3.12.
+
+Antes de criar o ambiente, confirma a versão:
 
 ```bash
-python3 -m venv .venv
+python3 --version
+```
+
+Atenção: no macOS, o `python3` que vem com o sistema (`/usr/bin/python3`) é o 3.9, que não serve.
+Nesse caso instala uma versão mais recente (por exemplo `brew install python@3.12` ou o instalador
+de python.org) e usa-a explicitamente para criar o ambiente, com uma destas opções:
+
+```bash
+# Opção A: venv com uma versão específica do Python
+python3.12 -m venv .venv
+
+# Opção B: ambiente conda (Anaconda/Miniconda)
+conda create -n bdf python=3.12
+conda activate bdf
+```
+
+O ambiente fica com a versão de Python usada para o criar. Se já existir um `.venv` feito com o 3.9,
+apaga-o (`rm -rf .venv`) e cria-o de novo.
+
+Na primeira vez, na pasta do repositório, cria-se um ambiente virtual e instalam-se as dependências
+(com conda, salta as duas primeiras linhas e corre só o `pip install`):
+
+```bash
+python3 -m venv .venv            # ou python3.12 -m venv .venv (ver acima)
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
