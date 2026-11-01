@@ -653,7 +653,10 @@ def main():
     print(f"  {n_r:,} avaliações · {n_u:,} utilizadores · {n_m:,} filmes avaliados".replace(",", " "))
     print(f"  esparsidade {ind['esparsidade_pct']}% · média {ind['rating_media']} · Gini utilizadores {ind['gini_user']}")
     print(f"  {len(figuras)} figuras em {pasta}")
-    print(f"[eda] {segundos:.1f} s")
+    # Tempo medido dentro do script, desde o início de main(): não inclui o arranque do
+    # Python nem os imports (pandas, matplotlib, duckdb). O run_pipeline.py mostra a seguir
+    # o tempo total do passo, que é por isso um pouco maior.
+    print(f"[eda] tempo interno do script (sem arranque nem imports): {segundos:.2f} s")
 
 
 if __name__ == "__main__":

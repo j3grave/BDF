@@ -89,6 +89,11 @@ instala em Python 3.9; o DuckDB e o PyYAML aceitam versões mais antigas. Com 3.
 funciona, mas o pip escolhe versões um pouco mais antigas de numpy, pandas, matplotlib e pyarrow,
 porque as mais recentes já exigem 3.11 ou 3.12.
 
+Versão testada: **Python 3.13** (3.13.18, Homebrew, macOS). Num ambiente limpo, o
+`pip install -r requirements.txt` instalou duckdb 2.0.0, polars 2.1.0, pandas 3.1.0, numpy 2.5.4,
+matplotlib 3.11.2 e pyarrow 26.0.0, e `python run_pipeline.py --dataset small` correu os quatro
+passos sem erros.
+
 Antes de criar o ambiente, confirma a versão:
 
 ```bash

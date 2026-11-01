@@ -70,8 +70,9 @@ def main():
         append_row(cfg['paths']['results'] / 'pipeline_runs.csv',
                    {'run_at': now(), 'dataset': cfg['dataset'], 'step': step, 'seconds': seconds})
         # flush=True escreve já no ecrã, para a linha não aparecer fora de ordem
-        # em relação ao que o passo imprimiu
-        print(f'[{step}] {seconds:.2f} s\n', flush=True)
+        # em relação ao que o passo imprimiu. É o tempo total do processo (arranque do
+        # Python, imports e trabalho), o mesmo que fica em pipeline_runs.csv.
+        print(f'[{step}] tempo total do passo (processo completo): {seconds:.2f} s\n', flush=True)
 
 
 if __name__ == '__main__':
