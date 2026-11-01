@@ -138,7 +138,8 @@ def ligar(base: Path, dataset: str, fonte: str) -> tuple[duckdb.DuckDBPyConnecti
         caminho, tipo = loc
         leitor = "read_parquet" if tipo == "parquet" else "read_csv_auto"
         con.execute(f"CREATE VIEW {t} AS SELECT * FROM {leitor}('{caminho}')")
-        origem[t] = f"{tipo}: {caminho}"
+        # Caminho relativo à raiz do projeto: o relatório é versionado e não deve expor pastas locais
+        origem[t] = f"{tipo}: {Path(caminho).relative_to(base).as_posix()}"
     if "ratings" not in origem or "movies" not in origem:
         raise SystemExit(
             f"Não encontrei ratings e movies em data/{dataset}/parquet nem data/{dataset}/csv. "

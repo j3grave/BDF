@@ -140,7 +140,7 @@ BDF/
 │   ├── raw/                    # zip e ficheiros originais
 │   ├── csv/                    # CSV normalizados
 │   └── parquet/                # <tabela>.parquet e ratings_by_year/year=AAAA/
-└── results/                    # não versionado
+└── results/                    # versionado (resultados leves: CSV, PNG, .md)
     ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
     ├── pipeline_runs.csv       # tempo de cada passo
     ├── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas

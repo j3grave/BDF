@@ -5,11 +5,11 @@ parquet/
 output/
 lab_results.zip
 data/
-results/
 *.parquet
 *.duckdb
 *.duckdb.wal
 *.csv
+!results/**/*.csv
 
 # Ambiente Python
 .venv/
