@@ -166,12 +166,15 @@ BDF/
 │   ├── 01_ingest.py
 │   ├── 02_to_parquet.py
 │   ├── 03_benchmark.py
-│   └── 04_eda.py
+│   ├── 04_eda.py
+│   └── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
 ├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
-├── data/<dataset>/             # não versionado
+├── data/<dataset>/             # não versionado; pode ser um symlink (ver abaixo)
 │   ├── raw/                    # zip e ficheiros originais
 │   ├── csv/                    # CSV normalizados
 │   └── parquet/                # <tabela>.parquet e ratings_by_year/year=AAAA/
+├── data/cloud/<pasta>/         # não versionado: espelho do que vai para o S3
+├── reports/                    # versionado: cloud_manifest_<dataset>.md
 └── results/                    # versionado (resultados leves: CSV, PNG, .md)
     ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
     ├── pipeline_runs.csv       # tempo de cada passo
@@ -180,6 +183,62 @@ BDF/
 ```
 
 O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
+
+`data/<dataset>` pode ser um symlink para outra localização, por exemplo outra cópia do repositório
+onde os dados já foram descarregados e convertidos. Assim não é preciso repetir o `ingest` e o
+`parquet`. Como `data/` está no `.gitignore`, o symlink não é versionado:
+
+```bash
+mkdir -p data
+ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
+```
+
+## Preparação para a cloud
+
+Fase 2 do projeto: levar os dados para AWS (S3 → Glue Data Catalog → Athena). O script
+`scripts/prepare_cloud.py` só prepara os ficheiros localmente, sem chamadas à AWS. Gera em
+`data/cloud/<pasta>/` um espelho exato do que vai para o S3. Precisa dos resultados dos passos
+`ingest` e `parquet` do dataset.
+
+```bash
+python scripts/prepare_cloud.py --dataset small   # teste rápido
+python scripts/prepare_cloud.py                   # por omissão: 32m
+```
+
+Estrutura gerada (para o 32M, `<pasta>` = `ml-32m`; para o small, `ml-latest-small`; para o 1M, `ml-1m`):
+
+```
+data/cloud/ml-32m/
+├── ratings/ratings.parquet           # ratings, sem partição
+├── ratings_part/year=AAAA/*.parquet  # ratings particionado por ano (year só no nome da pasta)
+├── ratings_csv/ratings.csv           # cópia do CSV, para comparar bytes lidos no Athena
+├── movies/movies.parquet
+├── tags/tags.parquet
+└── links/links.parquet
+```
+
+- Uma pasta por tabela, e cada pasta só tem ficheiros dessa tabela. O Glue e o Athena tratam cada
+  pasta como uma tabela, por isso não há ficheiros soltos na raiz.
+- Parquet com compressão zstd (a fase 1 usa snappy) e os mesmos tipos da fase 1, sem casts.
+- O ano é `year(to_timestamp("timestamp"))` em UTC, igual à fase 1.
+- O script é idempotente: apaga e recria `data/cloud/<pasta>/` em cada execução.
+- No fim, verifica:
+  - as contagens de linhas contra a origem;
+  - a soma das partições contra `ratings`;
+  - as contagens por ano contra o `ratings_by_year` da fase 1;
+  - os tipos, a compressão e a estrutura das pastas.
+- Se alguma verificação falhar, termina com erro e não gera o manifesto. Se tudo passar, escreve
+  `reports/cloud_manifest_<dataset>.md` com, por tabela, o caminho, o n.º de ficheiros, o tamanho, o
+  n.º de linhas, o schema e os tipos para o DDL do Athena, mais a lista de anos do `ratings_part`.
+- O benchmark DuckDB vs Athena deve ler os ficheiros de `data/cloud/`, que são os mesmos que vão para o S3.
+
+Upload para o S3 (fase seguinte; **apenas documentado, ainda não executado**):
+
+```bash
+aws s3 sync data/cloud/ml-32m/ s3://<bucket-dados>/ml-32m/
+```
+
+As credenciais AWS (`.aws/`, `*.env`, ficheiros de chaves) estão no `.gitignore` e nunca devem ser versionadas.
 
 ## Tecnologias
 
