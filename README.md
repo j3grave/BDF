@@ -167,8 +167,14 @@ BDF/
 │   ├── 02_to_parquet.py
 │   ├── 03_benchmark.py
 │   ├── 04_eda.py
-│   └── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
+│   ├── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
+│   ├── athena_common.py        # fase 2: opções AWS e cliente mínimo do Athena
+│   ├── athena_setup.py         # fase 2: DDL no Glue Data Catalog e validação
+│   └── athena_benchmark.py     # fase 2: benchmark DuckDB vs Athena
 ├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
+│   ├── athena/ddl/             # fase 2: CREATE TABLE para o Athena
+│   ├── athena/queries/         # fase 2: queries 01–06 no dialeto do Athena (Trino)
+│   └── cloud/                  # fase 2: queries extra no dialeto DuckDB (06)
 ├── data/<dataset>/             # não versionado; pode ser um symlink (ver abaixo)
 │   ├── raw/                    # zip e ficheiros originais
 │   ├── csv/                    # CSV normalizados
@@ -239,6 +245,51 @@ aws s3 sync data/cloud/ml-32m/ s3://<bucket-dados>/ml-32m/
 ```
 
 As credenciais AWS (`.aws/`, `*.env`, ficheiros de chaves) estão no `.gitignore` e nunca devem ser versionadas.
+
+## Athena: catálogo e benchmark
+
+Depois do upload, dois scripts tratam do resto. Ambos usam o `boto3`, que está no `requirements.txt`.
+
+| Script | O que faz |
+|---|---|
+| `scripts/athena_setup.py` | Corre o DDL de `sql/athena/ddl/` para criar no Glue Data Catalog a base de dados `movielens_<dataset>` e as seis tabelas. Carrega as partições de `ratings_part` com `MSCK REPAIR TABLE` e confirma que o n.º de linhas (total e por ano) é igual ao dos ficheiros locais. Antes de enviar o DDL, verifica, sem AWS, que as colunas e os tipos coincidem com `data/cloud/`. |
+| `scripts/athena_benchmark.py` | Corre as queries de `sql/athena/queries/` no Athena e as mesmas perguntas no DuckDB, sobre `data/cloud/`. As queries com ratings correm em CSV, Parquet e Parquet particionado. Regista a mediana do tempo, o tempo no motor, os MB lidos (o que o Athena cobra) e o n.º de linhas em `results/cloud_benchmarks.csv`. |
+
+Usamos DDL escrito à mão em vez de um crawler do Glue para os tipos ficarem exatamente os do manifesto.
+As queries do Athena estão no dialeto Trino. As diferenças para o DuckDB estão explicadas no
+cabeçalho de cada ficheiro:
+
+- `CROSS JOIN UNNEST` para os géneros;
+- `approx_percentile` em vez de `MEDIAN`;
+- `"timestamp"` entre aspas.
+
+A query `06_ratings_desde_2015` (`WHERE year >= 2015`) é nova na fase 2. Mostra o partition pruning
+e, para não alterar o benchmark da fase 1, a versão DuckDB está em `sql/cloud/`.
+
+**Credenciais no AWS Academy Learner Lab.** O laboratório só permite as regiões `us-east-1` e
+`us-west-2`, e as credenciais mudam a cada sessão:
+
+1. "Start Lab", e esperar que o indicador fique verde.
+2. "AWS Details" > "AWS CLI: Show". Copiar o bloco `[default]` (inclui `aws_session_token`) para
+   `~/.aws/credentials`, fora do repositório.
+3. Confirmar com `aws sts get-caller-identity`.
+
+Os nomes dos buckets ficam na secção `aws` do `config.yaml`, ou passam-se com `--bucket-dados` e
+`--bucket-resultados`.
+
+```bash
+# Sem AWS: verificar o DDL, ver o SQL que seria enviado e correr só a parte DuckDB
+python scripts/athena_setup.py --dry-run
+python scripts/athena_benchmark.py --dry-run
+python scripts/athena_benchmark.py --engines duckdb
+
+# Com AWS (depois do aws s3 sync)
+python scripts/athena_setup.py --bucket-dados <bucket-dados> --bucket-resultados <bucket-resultados>
+python scripts/athena_benchmark.py --bucket-dados <bucket-dados> --bucket-resultados <bucket-resultados>
+```
+
+O benchmark completo do 32M lê cerca de 12 GB no Athena. Quase tudo vem das 12 corridas sobre o
+CSV, que leem 877 MB cada. A 5 USD por TB, custa menos de 0,10 USD.
 
 ## Tecnologias
 
