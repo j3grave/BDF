@@ -25,3 +25,17 @@ Thumbs.db
 # Credenciais (nunca versionar)
 .env
 *.pem
+
+# Fase 2: espelho local do que vai para o S3 (já coberto por data/, mas explícito)
+data/cloud/
+
+# Credenciais AWS e afins (nunca versionar)
+.aws/
+*.env
+.env.*
+!.env.example
+credentials
+*credentials*.csv
+*credentials*.json
+*accessKeys*
+*.key
