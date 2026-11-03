@@ -6,6 +6,9 @@ matplotlib
 numpy
 pandas
 
+# Fase 2: Athena (scripts/athena_setup.py e scripts/athena_benchmark.py)
+boto3
+
 # Notebook
 polars>=1.37
 pyarrow

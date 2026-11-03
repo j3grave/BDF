@@ -4,3 +4,12 @@
 dataset: small          # small | 1m | 32m
 data_dir: data          # downloads, CSV normalizados e Parquet: data/<dataset>/...
 results_dir: results    # tamanhos, tempos e benchmarks
+
+# Fase 2 (scripts/athena_setup.py e scripts/athena_benchmark.py). Os nomes dos buckets não são
+# segredos e podem ficar aqui; as credenciais NUNCA (vão para ~/.aws/credentials).
+# O AWS Academy Learner Lab só permite us-east-1 e us-west-2.
+aws:
+  region: us-east-1
+  bucket_dados: null        # bucket com data/cloud/<pasta>/, ex.: bdf26-g1-movielens-dados
+  bucket_resultados: null   # resultados das queries do Athena, ex.: bdf26-g1-athena-resultados
+  workgroup: primary
