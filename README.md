@@ -57,7 +57,7 @@ Requer Python 3.10 ou superior.
 ```bash
 git clone https://github.com/j3grave/BDF.git
 cd BDF
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 jupyter lab                      # ou abrir o notebook no VS Code
@@ -75,6 +75,221 @@ BDF/
 
 Ao executar o notebook são criadas as pastas `ml-latest-small/` (CSV), `parquet/` e `output/`
 (base de dados `movielens.duckdb`), que não são versionadas.
+
+## Pipeline local
+
+Pipeline reprodutível que descarrega o MovieLens, converte-o para Parquet com DuckDB e mede o tempo
+das queries. Funciona com três tamanhos do dataset: `small` (100 mil ratings), `1m` (1 milhão)
+e `32m` (32 milhões).
+
+### Ambiente
+
+Requer **Python 3.10 ou superior** (recomenda-se 3.12). O limite vem do `polars>=1.37`, que não
+instala em Python 3.9; o DuckDB e o PyYAML aceitam versões mais antigas. Com 3.10 ou 3.11 a instalação
+funciona, mas o pip escolhe versões um pouco mais antigas de numpy, pandas, matplotlib e pyarrow,
+porque as mais recentes já exigem 3.11 ou 3.12.
+
+Versão testada: **Python 3.13** (3.13.18, Homebrew, macOS). Num ambiente limpo, o
+`pip install -r requirements.txt` instalou duckdb 2.0.0, polars 2.1.0, pandas 3.1.0, numpy 2.5.4,
+matplotlib 3.11.2 e pyarrow 26.0.0, e `python run_pipeline.py --dataset small` correu os quatro
+passos sem erros.
+
+Antes de criar o ambiente, confirma a versão:
+
+```bash
+python3 --version
+```
+
+Atenção: no macOS, o `python3` que vem com o sistema (`/usr/bin/python3`) é o 3.9, que não serve.
+Nesse caso instala uma versão mais recente (por exemplo `brew install python@3.12` ou o instalador
+de python.org) e usa-a explicitamente para criar o ambiente, com uma destas opções:
+
+```bash
+# Opção A: venv com uma versão específica do Python
+python3.12 -m venv .venv
+
+# Opção B: ambiente conda (Anaconda/Miniconda)
+conda create -n bdf python=3.12
+conda activate bdf
+```
+
+O ambiente fica com a versão de Python usada para o criar. Se já existir um `.venv` feito com o 3.9,
+apaga-o (`rm -rf .venv`) e cria-o de novo.
+
+Na primeira vez, na pasta do repositório, cria-se um ambiente virtual e instalam-se as dependências
+(com conda, salta as duas primeiras linhas e corre só o `pip install`):
+
+```bash
+python3 -m venv .venv            # ou python3.12 -m venv .venv (ver acima)
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Nas sessões seguintes basta ativar o ambiente (`source .venv/bin/activate`). Com o ambiente ativo,
+`python` é o do `.venv`, que já tem o DuckDB e o PyYAML instalados. Para confirmar:
+
+```bash
+python -c "import duckdb, yaml; print('duckdb', duckdb.__version__)"
+```
+
+### Como correr
+
+Com o ambiente ativo:
+
+```bash
+python run_pipeline.py --dataset small                 # todos os passos
+python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
+```
+
+Os passos são `ingest`, `parquet`, `benchmark` e `eda`. Sem `--dataset` usa-se o valor de `config.yaml`.
+Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_to_parquet.py --dataset 1m`.
+
+| Passo | Script | O que faz |
+|---|---|---|
+| `ingest` | `scripts/01_ingest.py` | Descarrega o zip do GroupLens, só se ainda não existir, e normaliza para CSV com o esquema comum (`ratings`: userId, movieId, rating, timestamp; `movies`: movieId, title, genres). Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
+| `parquet` | `scripts/02_to_parquet.py` | `COPY` do DuckDB para Parquet sem partição e `ratings` particionado por ano (`PARTITION_BY year`, ano em UTC). Regista os tamanhos do CSV e do Parquet. |
+| `benchmark` | `scripts/03_benchmark.py` | Corre cada query de `sql/` 3 vezes sobre os dois formatos de Parquet e regista a mediana do tempo e o n.º de linhas. |
+| `eda` | `scripts/04_eda.py` | Análise exploratória com agregações no DuckDB: indicadores, qualidade das tabelas, 10 figuras (paleta NOVA IMS) e relatório em Markdown. |
+
+Nas queries de `sql/`, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet. Os dois
+formatos têm as mesmas colunas, incluindo `year`. `10_flag_bots.sql` é um esqueleto e é ignorado
+enquanto só tiver comentários.
+
+### Estrutura de pastas
+
+```
+BDF/
+├── config.yaml                 # dataset (small | 1m | 32m), data_dir, results_dir
+├── run_pipeline.py             # ponto de entrada
+├── scripts/
+│   ├── common.py               # configuração, caminhos e registo de resultados
+│   ├── 01_ingest.py
+│   ├── 02_to_parquet.py
+│   ├── 03_benchmark.py
+│   ├── 04_eda.py
+│   ├── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
+│   ├── athena_common.py        # fase 2: opções AWS e cliente mínimo do Athena
+│   ├── athena_setup.py         # fase 2: DDL no Glue Data Catalog e validação
+│   └── athena_benchmark.py     # fase 2: benchmark DuckDB vs Athena
+├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
+│   ├── athena/ddl/             # fase 2: CREATE TABLE para o Athena
+│   ├── athena/queries/         # fase 2: queries 01–06 no dialeto do Athena (Trino)
+│   └── cloud/                  # fase 2: queries extra no dialeto DuckDB (06)
+├── data/<dataset>/             # não versionado; pode ser um symlink (ver abaixo)
+│   ├── raw/                    # zip e ficheiros originais
+│   ├── csv/                    # CSV normalizados
+│   └── parquet/                # <tabela>.parquet e ratings_by_year/year=AAAA/
+├── data/cloud/<pasta>/         # não versionado: espelho do que vai para o S3
+├── reports/                    # versionado: cloud_manifest_<dataset>.md
+└── results/                    # versionado (resultados leves: CSV, PNG, .md)
+    ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
+    ├── pipeline_runs.csv       # tempo de cada passo
+    ├── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
+    └── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
+```
+
+O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
+
+`data/<dataset>` pode ser um symlink para outra localização, por exemplo outra cópia do repositório
+onde os dados já foram descarregados e convertidos. Assim não é preciso repetir o `ingest` e o
+`parquet`. Como `data/` está no `.gitignore`, o symlink não é versionado:
+
+```bash
+mkdir -p data
+ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
+```
+
+## Preparação para a cloud
+
+Fase 2 do projeto: levar os dados para AWS (S3 → Glue Data Catalog → Athena). O script
+`scripts/prepare_cloud.py` só prepara os ficheiros localmente, sem chamadas à AWS. Gera em
+`data/cloud/<pasta>/` um espelho exato do que vai para o S3. Precisa dos resultados dos passos
+`ingest` e `parquet` do dataset.
+
+```bash
+python scripts/prepare_cloud.py --dataset small   # teste rápido
+python scripts/prepare_cloud.py                   # por omissão: 32m
+```
+
+Estrutura gerada (para o 32M, `<pasta>` = `ml-32m`; para o small, `ml-latest-small`; para o 1M, `ml-1m`):
+
+```
+data/cloud/ml-32m/
+├── ratings/ratings.parquet           # ratings, sem partição
+├── ratings_part/year=AAAA/*.parquet  # ratings particionado por ano (year só no nome da pasta)
+├── ratings_csv/ratings.csv           # cópia do CSV, para comparar bytes lidos no Athena
+├── movies/movies.parquet
+├── tags/tags.parquet
+└── links/links.parquet
+```
+
+- Uma pasta por tabela, e cada pasta só tem ficheiros dessa tabela. O Glue e o Athena tratam cada
+  pasta como uma tabela, por isso não há ficheiros soltos na raiz.
+- Parquet com compressão zstd (a fase 1 usa snappy) e os mesmos tipos da fase 1, sem casts.
+- O ano é `year(to_timestamp("timestamp"))` em UTC, igual à fase 1.
+- O script é idempotente: apaga e recria `data/cloud/<pasta>/` em cada execução.
+- No fim, verifica:
+  - as contagens de linhas contra a origem;
+  - a soma das partições contra `ratings`;
+  - as contagens por ano contra o `ratings_by_year` da fase 1;
+  - os tipos, a compressão e a estrutura das pastas.
+- Se alguma verificação falhar, termina com erro e não gera o manifesto. Se tudo passar, escreve
+  `reports/cloud_manifest_<dataset>.md` com, por tabela, o caminho, o n.º de ficheiros, o tamanho, o
+  n.º de linhas, o schema e os tipos para o DDL do Athena, mais a lista de anos do `ratings_part`.
+- O benchmark DuckDB vs Athena deve ler os ficheiros de `data/cloud/`, que são os mesmos que vão para o S3.
+
+Upload para o S3 (fase seguinte; **apenas documentado, ainda não executado**):
+
+```bash
+aws s3 sync data/cloud/ml-32m/ s3://<bucket-dados>/ml-32m/
+```
+
+As credenciais AWS (`.aws/`, `*.env`, ficheiros de chaves) estão no `.gitignore` e nunca devem ser versionadas.
+
+## Athena: catálogo e benchmark
+
+Depois do upload, dois scripts tratam do resto. Ambos usam o `boto3`, que está no `requirements.txt`.
+
+| Script | O que faz |
+|---|---|
+| `scripts/athena_setup.py` | Corre o DDL de `sql/athena/ddl/` para criar no Glue Data Catalog a base de dados `movielens_<dataset>` e as seis tabelas. Carrega as partições de `ratings_part` com `MSCK REPAIR TABLE` e confirma que o n.º de linhas (total e por ano) é igual ao dos ficheiros locais. Antes de enviar o DDL, verifica, sem AWS, que as colunas e os tipos coincidem com `data/cloud/`. |
+| `scripts/athena_benchmark.py` | Corre as queries de `sql/athena/queries/` no Athena e as mesmas perguntas no DuckDB, sobre `data/cloud/`. As queries com ratings correm em CSV, Parquet e Parquet particionado. Regista a mediana do tempo, o tempo no motor, os MB lidos (o que o Athena cobra) e o n.º de linhas em `results/cloud_benchmarks.csv`. |
+
+Usamos DDL escrito à mão em vez de um crawler do Glue para os tipos ficarem exatamente os do manifesto.
+As queries do Athena estão no dialeto Trino. As diferenças para o DuckDB estão explicadas no
+cabeçalho de cada ficheiro:
+
+- `CROSS JOIN UNNEST` para os géneros;
+- `approx_percentile` em vez de `MEDIAN`;
+- `"timestamp"` entre aspas.
+
+A query `06_ratings_desde_2015` (`WHERE year >= 2015`) é nova na fase 2. Mostra o partition pruning
+e, para não alterar o benchmark da fase 1, a versão DuckDB está em `sql/cloud/`.
+
+**Credenciais no AWS Academy Learner Lab.** O laboratório só permite as regiões `us-east-1` e
+`us-west-2`, e as credenciais mudam a cada sessão:
+
+1. "Start Lab", e esperar que o indicador fique verde.
+2. "AWS Details" > "AWS CLI: Show". Copiar o bloco `[default]` (inclui `aws_session_token`) para
+   `~/.aws/credentials`, fora do repositório.
+3. Confirmar com `aws sts get-caller-identity`.
+
+Os nomes dos buckets ficam na secção `aws` do `config.yaml`, ou passam-se com `--bucket-dados` e
+`--bucket-resultados`.
+
+```bash
+# Sem AWS: verificar o DDL, ver o SQL que seria enviado e correr só a parte DuckDB
+python scripts/athena_setup.py --dry-run
+python scripts/athena_benchmark.py --dry-run
+python scripts/athena_benchmark.py --engines duckdb
+
+# Com AWS (depois do aws s3 sync)
+python scripts/athena_setup.py --bucket-dados <bucket-dados> --bucket-resultados <bucket-resultados>
+python scripts/athena_benchmark.py --bucket-dados <bucket-dados> --bucket-resultados <bucket-resultados>
+```
+
+O benchmark completo do 32M lê cerca de 12 GB no Athena. Quase tudo vem das 12 corridas sobre o
+CSV, que leem 877 MB cada. A 5 USD por TB, custa menos de 0,10 USD.
 
 ## Tecnologias
 
