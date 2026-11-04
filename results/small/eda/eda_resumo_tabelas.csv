@@ -1,0 +1,15 @@
+tabela,coluna,linhas,nulos,pct_nulos,distintos_aprox
+ratings,userId,100836,0,0.0,737
+ratings,movieId,100836,0,0.0,11149
+ratings,rating,100836,0,0.0,11
+ratings,timestamp,100836,0,0.0,84446
+movies,movieId,9742,0,0.0,11149
+movies,title,9742,0,0.0,10772
+movies,genres,9742,0,0.0,911
+tags,userId,3683,0,0.0,76
+tags,movieId,3683,0,0.0,1529
+tags,tag,3683,0,0.0,1593
+tags,timestamp,3683,0,0.0,4107
+links,movieId,9742,0,0.0,11149
+links,imdbId,9742,0,0.0,9763
+links,tmdbId,9742,8,0.082,8318

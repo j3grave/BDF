@@ -1,6 +1,12 @@
-duckdb>=1.4
+# Pipeline (run_pipeline.py e scripts/): testado com DuckDB 1.4.5, 1.5.6 e 2.0.0
+duckdb>=1.4,<2.1
+pyyaml>=6.0
+# Passo eda (scripts/04_eda.py)
+matplotlib
+numpy
+pandas
+
+# Notebook
 polars>=1.37
 pyarrow
-pandas
-matplotlib
 jupyter

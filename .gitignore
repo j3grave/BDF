@@ -4,10 +4,12 @@ ml-latest-small.zip
 parquet/
 output/
 lab_results.zip
+data/
 *.parquet
 *.duckdb
 *.duckdb.wal
 *.csv
+!results/**/*.csv
 
 # Ambiente Python
 .venv/

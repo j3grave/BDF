@@ -57,7 +57,7 @@ Requer Python 3.10 ou superior.
 ```bash
 git clone https://github.com/j3grave/BDF.git
 cd BDF
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 jupyter lab                      # ou abrir o notebook no VS Code
@@ -75,6 +75,111 @@ BDF/
 
 Ao executar o notebook são criadas as pastas `ml-latest-small/` (CSV), `parquet/` e `output/`
 (base de dados `movielens.duckdb`), que não são versionadas.
+
+## Pipeline local
+
+Pipeline reprodutível que descarrega o MovieLens, converte-o para Parquet com DuckDB e mede o tempo
+das queries. Funciona com três tamanhos do dataset: `small` (100 mil ratings), `1m` (1 milhão)
+e `32m` (32 milhões).
+
+### Ambiente
+
+Requer **Python 3.10 ou superior** (recomenda-se 3.12). O limite vem do `polars>=1.37`, que não
+instala em Python 3.9; o DuckDB e o PyYAML aceitam versões mais antigas. Com 3.10 ou 3.11 a instalação
+funciona, mas o pip escolhe versões um pouco mais antigas de numpy, pandas, matplotlib e pyarrow,
+porque as mais recentes já exigem 3.11 ou 3.12.
+
+Versão testada: **Python 3.13** (3.13.18, Homebrew, macOS). Num ambiente limpo, o
+`pip install -r requirements.txt` instalou duckdb 2.0.0, polars 2.1.0, pandas 3.1.0, numpy 2.5.4,
+matplotlib 3.11.2 e pyarrow 26.0.0, e `python run_pipeline.py --dataset small` correu os quatro
+passos sem erros.
+
+Antes de criar o ambiente, confirma a versão:
+
+```bash
+python3 --version
+```
+
+Atenção: no macOS, o `python3` que vem com o sistema (`/usr/bin/python3`) é o 3.9, que não serve.
+Nesse caso instala uma versão mais recente (por exemplo `brew install python@3.12` ou o instalador
+de python.org) e usa-a explicitamente para criar o ambiente, com uma destas opções:
+
+```bash
+# Opção A: venv com uma versão específica do Python
+python3.12 -m venv .venv
+
+# Opção B: ambiente conda (Anaconda/Miniconda)
+conda create -n bdf python=3.12
+conda activate bdf
+```
+
+O ambiente fica com a versão de Python usada para o criar. Se já existir um `.venv` feito com o 3.9,
+apaga-o (`rm -rf .venv`) e cria-o de novo.
+
+Na primeira vez, na pasta do repositório, cria-se um ambiente virtual e instalam-se as dependências
+(com conda, salta as duas primeiras linhas e corre só o `pip install`):
+
+```bash
+python3 -m venv .venv            # ou python3.12 -m venv .venv (ver acima)
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Nas sessões seguintes basta ativar o ambiente (`source .venv/bin/activate`). Com o ambiente ativo,
+`python` é o do `.venv`, que já tem o DuckDB e o PyYAML instalados. Para confirmar:
+
+```bash
+python -c "import duckdb, yaml; print('duckdb', duckdb.__version__)"
+```
+
+### Como correr
+
+Com o ambiente ativo:
+
+```bash
+python run_pipeline.py --dataset small                 # todos os passos
+python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
+```
+
+Os passos são `ingest`, `parquet`, `benchmark` e `eda`. Sem `--dataset` usa-se o valor de `config.yaml`.
+Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_to_parquet.py --dataset 1m`.
+
+| Passo | Script | O que faz |
+|---|---|---|
+| `ingest` | `scripts/01_ingest.py` | Descarrega o zip do GroupLens, só se ainda não existir, e normaliza para CSV com o esquema comum (`ratings`: userId, movieId, rating, timestamp; `movies`: movieId, title, genres). Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
+| `parquet` | `scripts/02_to_parquet.py` | `COPY` do DuckDB para Parquet sem partição e `ratings` particionado por ano (`PARTITION_BY year`, ano em UTC). Regista os tamanhos do CSV e do Parquet. |
+| `benchmark` | `scripts/03_benchmark.py` | Corre cada query de `sql/` 3 vezes sobre os dois formatos de Parquet e regista a mediana do tempo e o n.º de linhas. |
+| `eda` | `scripts/04_eda.py` | Análise exploratória com agregações no DuckDB: indicadores, qualidade das tabelas, 10 figuras (paleta NOVA IMS) e relatório em Markdown. |
+
+Nas queries de `sql/`, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet. Os dois
+formatos têm as mesmas colunas, incluindo `year`. `10_flag_bots.sql` é um esqueleto e é ignorado
+enquanto só tiver comentários.
+
+### Estrutura de pastas
+
+```
+BDF/
+├── config.yaml                 # dataset (small | 1m | 32m), data_dir, results_dir
+├── run_pipeline.py             # ponto de entrada
+├── scripts/
+│   ├── common.py               # configuração, caminhos e registo de resultados
+│   ├── 01_ingest.py
+│   ├── 02_to_parquet.py
+│   ├── 03_benchmark.py
+│   └── 04_eda.py
+├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
+├── data/<dataset>/             # não versionado
+│   ├── raw/                    # zip e ficheiros originais
+│   ├── csv/                    # CSV normalizados
+│   └── parquet/                # <tabela>.parquet e ratings_by_year/year=AAAA/
+└── results/                    # versionado (resultados leves: CSV, PNG, .md)
+    ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
+    ├── pipeline_runs.csv       # tempo de cada passo
+    ├── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
+    └── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
+```
+
+O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
 
 ## Tecnologias
 
