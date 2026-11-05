@@ -1,0 +1,5 @@
+query,linhas,segundos,fonte
+anual,4,0.0066,parquet
+ponderado,10,0.003,parquet
+qualidade,1,0.0132,parquet
+valores_ano,20,0.0047,parquet

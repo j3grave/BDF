@@ -1,0 +1,5 @@
+query,linhas_duckdb,linhas_athena,iguais,nota
+anual,23,23,sim,
+ponderado,10,10,sim,
+qualidade,1,1,sim,
+valores_ano,195,195,sim,
