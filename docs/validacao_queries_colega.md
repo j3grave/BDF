@@ -50,7 +50,9 @@ a tabela final por query (13.7) e os pendentes (13.9).
 - **Deteção de bots** (a validar com o Luís):
   - suspeitos: 0,33% no small e 0,10% no 1M, contra 34,4% e 46,8% com a regra original;
   - submissões em lote reportadas à parte.
-- **Ainda não feito:** nada no 32M nem no Athena; o bloco 6 aguarda aprovação.
+- **Coordenação entre contas** (bloco 6, só 1M): sem sinal acima da linha de base; as rajadas
+  mais fortes são contas novas no pico de registos de 20–21/11/2000.
+- **Ainda não feito:** nada no 32M nem no Athena.
 
 ## 0. O que foi analisado e como
 
@@ -971,9 +973,53 @@ sentido se outras análises dependerem da classificação, além de `eventos`.
 - **Athena:** emulação no DuckDB, igual à versão DuckDB.
 - **Nada foi executado no Athena nem no 32M.**
 
-### 13.8 Bloco 6: teste de coordenação entre contas
+### 13.8 Bloco 6: teste de coordenação entre contas (1M)
 
-Ainda não começou, como combinado: fica à espera da aprovação do bloco 5.
+Script `scripts/06_coordenacao.py --dataset 1m` (20 permutações, ~2 s). Saídas em
+`results/1m/bots_coordenacao/`. Não corrido no 32M. **A validar com o Luís.**
+
+**Definição**
+- Rajada: (filme, nota extrema, hora UTC) com ≥ U utilizadores distintos e |nota − média do
+  filme| ≥ D. Notas 1 e 5 no 1M (0,5 e 5,0 no 32M). U ∈ {3, 5, 10}, D ∈ {1,5; 2}.
+- A hora é a hora de relógio (`timestamp // 3600`), não uma janela deslizante.
+- Linha de base: os timestamps são permutados dentro de cada filme (o filme mantém a atividade
+  por hora; a ligação nota–momento é quebrada). 20 repetições com sementes 1..20.
+- A permutação usa `hash(userId, movieId, semente)` em vez de `setseed` + `random()`: é
+  equivalente, mas reprodutível com várias threads. Duas corridas deram CSV idênticos.
+- Valor-p empírico = (1 + n.º de permutações ≥ real) / 21; o menor possível é 0,048.
+
+**Real vs linha de base (notas 1 e 5 juntas)**
+
+| U | D | Real | Média permutações | p95 | Valor-p |
+|---:|---:|---:|---:|---:|---:|
+| 3 | 1,5 | 87 | 73,1 | 84,4 | 0,095 |
+| 3 | 2 | 20 | 14,8 | 20,3 | 0,143 |
+| 5 | 1,5 | 3 | 2,0 | 3,1 | 0,429 |
+| 5 | 2 | 2 | 0,35 | 1,05 | 0,095 |
+| 10 | 1,5 / 2 | 0 | 0 | 0 | 1 |
+
+- Nenhuma combinação fica abaixo de 0,05. A única no limite (nota 5, U ≥ 3, D ≥ 2: 3 reais
+  contra 0,6) é uma de 18 comparações e assenta em 3 rajadas; não resiste a correção para
+  comparações múltiplas. Tabela completa por nota em `teste.csv`.
+- Não há nenhuma rajada com 10 ou mais utilizadores, real ou permutada.
+
+**As 10 rajadas mais fortes** (`top10_rajadas.csv`, contas em `top10_contas.csv`)
+- Todas em 20–21/11/2000, o pico de registos do 1M; 70 das 87 rajadas são desses dois dias.
+- 7 utilizadores no máximo (Rocky Horror Picture Show, nota 5, 7 de 8 avaliações dessa hora).
+- Contas: 45 presenças, 34 contas distintas; 98% estavam nas primeiras 24 h da conta
+  (antiguidade mediana < 0,1 dias) e 49% voltaram a avaliar mais de 24 h depois.
+- Contas grandes (mediana de 218 a 565 avaliações), nenhuma suspeita no bloco 5
+  (37 "sem sinais", 8 "submissão em lote").
+- Jaccard médio entre as contas de cada rajada: 0,08–0,24, contra 0,056 (p95 0,156) entre pares
+  de contas quaisquer. É mais alto, mas é o esperado para contas grandes que se registaram no
+  mesmo dia e viram o mesmo formulário de registo; não é, por si, sinal de coordenação.
+- Nenhuma coincide com a "estreia" do filme no dataset (primeira avaliação 181–209 dias antes);
+  os filmes são de 1975–1999.
+
+**Leitura**: no 1M não há evidência de contas coordenadas. As rajadas reais são quase tantas como
+as que a atividade dos filmes produz por acaso, e as mais fortes explicam-se pelo registo em massa
+de novembro de 2000 (filmes de culto e polarizadores, como Rocky Horror e Blair Witch). O 32M,
+com 200 mil contas e 25 anos, é onde o teste pode mostrar alguma coisa.
 
 ### 13.9 Pendentes
 
@@ -993,7 +1039,7 @@ Ainda não começou, como combinado: fica à espera da aprovação do bloco 5.
 - [ ] Antes disso, decidir onde gravar `10_flag_bots.csv` do 32M: tem 200 948 linhas, dezenas de MB,
   e o `.gitignore` versiona `results/**/*.csv`.
 - [ ] Calibrar a regra A no 32M (distribuição e sinalizados no p99, p99,5 e p99,9).
-- [ ] Bloco 6 no 32M.
+- [ ] Bloco 6 no 32M: `python scripts/06_coordenacao.py --dataset 32m` (notas 0,5 e 5,0; `--repeticoes 10` se for lento).
 
 **Execução real no Athena**
 - [ ] Um script (por exemplo `scripts/athena_analises.py`, ainda por criar) que corra
