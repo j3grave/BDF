@@ -17,13 +17,15 @@ Objetivo:
     - a soma das avaliações por ano (anual) igual ao total de linhas.
 
 Entradas:
-    sql/analise/*.sql                    queries com os marcadores ${ratings}, ${movies} (e ${suspeitos})
+    sql/analise/*.sql                    queries com os marcadores ${ratings}, ${movies} (e ${flag_bots})
     data/<dataset>/parquet/              Parquet sem partição (--fonte parquet, por omissão)
     data/<dataset>/csv/                  CSV normalizados (--fonte csv)
     sql/athena/analise/*.sql             versões Athena (só com --emular-athena)
 
 Saídas (em results/<dataset>/analises/):
     <query>.csv                          resultado de cada query
+    10_flag_bots_referencia.csv          só no small: os 5 utilizadores de referência da deteção
+                                         de bots, com a classificação esperada, a obtida e a justificação
     analises_resumo.csv                  n.º de linhas e tempo de cada query
     analises_relatorio.md                fontes, verificações e resumo
     athena_emulado/<query>.csv           com --emular-athena: resultado das versões Athena
@@ -40,14 +42,15 @@ Como correr:
 Notas:
     - A ligação fixa SET TimeZone = 'UTC'; o ano vem da coluna year de ${ratings}, calculada
       com epoch_ms (sem fuso), como no 03_benchmark.py. Nenhum resultado depende da máquina.
-    - ${suspeitos} é a tabela por utilizador de 10_flag_bots.sql. O script corre essa query
-      primeiro e guarda-a numa tabela temporária; no Athena seria um CTAS em Parquet.
+    - ${flag_bots} é a tabela por utilizador de 10_flag_bots.sql. O script corre essa query
+      primeiro e guarda-a numa tabela temporária; no Athena é um CTAS em Parquet.
     - A emulação do Athena valida a lógica e os resultados das versões Athena (com divisão
       inteira entre inteiros, como no Trino, e macros para from_unixtime, date_format,
       sequence e approx_percentile). NÃO valida a sintaxe do Trino: isso só na AWS.
 """
 import argparse
 import math
+import re
 import time
 from pathlib import Path
 from string import Template
@@ -62,8 +65,8 @@ PASTA_SQL_ATHENA = ROOT / 'sql' / 'athena' / 'analise'
 
 # Queries cujo resultado outras queries usam: nome do ficheiro -> nome da tabela temporária.
 # 10_flag_bots corre primeiro (a ordem alfabética já o põe à frente, por começar por um dígito).
-MATERIALIZAR = {'10_flag_bots': 'suspeitos'}
-DEPENDENCIAS = {'eventos': ['10_flag_bots']}
+MATERIALIZAR = {'10_flag_bots': 'flag_bots'}
+DEPENDENCIAS = {'eventos': ['10_flag_bots'], '10_flag_bots_calibracao': ['10_flag_bots']}
 
 
 def parse_args():
@@ -117,7 +120,7 @@ def ligar(cfg, fonte):
 FONTES_DUCKDB = {
     'ratings': '(SELECT *, year(epoch_ms(timestamp * 1000)) AS year FROM ratings_base)',
     'movies': 'movies',
-    'suspeitos': 'suspeitos',
+    'flag_bots': 'flag_bots',
 }
 
 # Na emulação do Athena, ${ratings} é escrito como no athena_benchmark.py para as tabelas sem
@@ -125,7 +128,7 @@ FONTES_DUCKDB = {
 FONTES_ATHENA = {
     'ratings': '(SELECT x.*, year(from_unixtime(x."timestamp")) AS year FROM ratings_base AS x)',
     'movies': 'movies',
-    'suspeitos': 'suspeitos',
+    'flag_bots': 'flag_bots',
 }
 
 MACROS_ATHENA = [
@@ -137,6 +140,23 @@ MACROS_ATHENA = [
     # approx_percentile do Trino é aproximado; aqui usa-se o quantil exato (diferenças pequenas)
     'CREATE OR REPLACE MACRO approx_percentile(x, p) AS quantile_cont(x, p)',
 ]
+
+
+# Padrões que a emulação não reproduz: no Trino, uma divisão com um literal decimal
+# (100.0 * x / y, x * 1.0 / y) fica com a escala do literal (1 casa decimal), enquanto no DuckDB
+# dá um número real. Nas versões Athena usa-se CAST(... AS double); esta verificação apanha
+# esquecimentos.
+DECIMAL_EM_CONTA = re.compile(r'(\d+\.\d+\s*[*/])|([*/]\s*\d+\.\d+)')
+
+
+def avisos_trino(texto):
+    """Linhas (sem comentários) de uma query Athena com um literal decimal numa multiplicação ou divisão."""
+    avisos = []
+    for linha in texto.splitlines():
+        codigo = linha.split('--')[0]
+        if DECIMAL_EM_CONTA.search(codigo):
+            avisos.append(codigo.strip())
+    return avisos
 
 
 def preparar_emulacao(con):
@@ -170,7 +190,7 @@ def correr(con, nome, ficheiro, fontes, destino):
     sql = Template(ficheiro.read_text(encoding='utf-8')).substitute(fontes).strip().rstrip(';')
     t0 = time.perf_counter()
     if nome in MATERIALIZAR:
-        # Tabela temporária para as queries que dependem desta (ex.: ${suspeitos} em eventos)
+        # Tabela temporária para as queries que dependem desta (ex.: ${flag_bots} em eventos)
         tabela = MATERIALIZAR[nome]
         con.execute(f'CREATE OR REPLACE TEMP TABLE {tabela} AS {sql}')
         sql = f'SELECT * FROM {tabela}'
@@ -226,6 +246,57 @@ def verificar(pasta, ds):
     return res
 
 
+# Utilizadores de referência da deteção de bots no small: (classificação esperada, porquê).
+REFERENCIA_BOTS = {
+    'small': {
+        257: ('sem sinais', '20 avaliações em 11 min no registo: não pode ser sinalizado'),
+        7: ('sem sinais', 'uso normal: não pode ser sinalizado'),
+        89: ('suspeito (regra B)', '518 avaliações em 23 min no registo, ~2 s cada: candidato'),
+        610: ('suspeito (regra A)', '566 avaliações numa hora, ~4 s cada, ~6 meses depois do registo'),
+        534: ('submissão em lote', 'muitas avaliações no mesmo segundo (2016): não é bot'),
+    },
+}
+
+
+def justificar(r):
+    """Texto com os números que levam à classificação de um utilizador (linha de 10_flag_bots.csv)."""
+    def inteiro(x):
+        return '-' if pd.isna(x) else f'{x:.0f}'
+    partes = []
+    if r.regra_a:
+        partes.append(f'regra A: {inteiro(r.max_eventos_10min_apos)} eventos em 10 min depois do registo '
+                      f'(limiar p99,9 = {r.limiar_regra_a:.1f}), mediana de {inteiro(r.mediana_intervalo_apos_s)} s entre eventos')
+    if r.regra_b:
+        partes.append(f'regra B: {r.eventos_registo} eventos nas primeiras 24 h, mediana de '
+                      f'{inteiro(r.mediana_intervalo_registo_s)} s entre eventos (>= 100 e <= 2 s)')
+    if r.submissao_lote:
+        partes.append(f'submissão em lote: até {r.max_avaliacoes_mesmo_segundo} avaliações no mesmo segundo '
+                      f'({r.pct_eventos_lote:.0f}% dos eventos com 2 ou mais), primeiro dia {r.primeiro_dia}')
+    if not partes:
+        partes.append(f'depois do registo: máx. {inteiro(r.max_eventos_10min_apos)} eventos em 10 min (limiar '
+                      f'{r.limiar_regra_a:.1f}); registo: {r.eventos_registo} eventos, mediana de '
+                      f'{inteiro(r.mediana_intervalo_registo_s)} s (a regra B exige >= 100 eventos e <= 2 s); '
+                      f'máx. {r.max_avaliacoes_mesmo_segundo} avaliações no mesmo segundo')
+    partes.append(f'sinais complementares: {r.sinais_complementares}/3')
+    return '; '.join(partes)
+
+
+def referencia_bots(pasta, ds):
+    """Grava 10_flag_bots_referencia.csv (só datasets com referência) e devolve as verificações."""
+    flags = ler(pasta, '10_flag_bots')
+    if flags is None or ds not in REFERENCIA_BOTS:
+        return []
+    linhas, verif = [], []
+    for uid, (esperado, porque) in REFERENCIA_BOTS[ds].items():
+        r = flags[flags.userId == uid].iloc[0]
+        ok = r.classificacao == esperado
+        linhas.append({'userId': uid, 'caso': porque, 'esperado': esperado, 'obtido': r.classificacao,
+                       'ok': 'sim' if ok else 'NÃO', 'justificacao': justificar(r)})
+        verif.append((f'bots: utilizador {uid} = {esperado}', r.classificacao, ok))
+    pd.DataFrame(linhas).to_csv(pasta / '10_flag_bots_referencia.csv', index=False)
+    return verif
+
+
 def iguais(a, b, tol=1e-6):
     """Compara dois resultados pela posição das colunas (no Athena os nomes saem em minúsculas)."""
     if a.shape != b.shape:
@@ -257,6 +328,36 @@ def escrever_relatorio(pasta, ds, origem, resumo, verif, comparacao, segundos):
     L += ['', '## Queries', '', '| Query | Linhas | Segundos | CSV |', '|---|---:|---:|---|']
     for r in resumo:
         L.append(f"| {r['query']} | {r['linhas']} | {r['segundos']:.3f} | `{r['query']}.csv` |")
+    flags, calib = ler(pasta, '10_flag_bots'), ler(pasta, '10_flag_bots_calibracao')
+    if flags is not None and calib is not None:
+        c = calib.iloc[0]
+        L += ['', '## Deteção de bots (10_flag_bots, a validar com o Luís)', '',
+              f"- Utilizadores: {int(c.utilizadores)}; suspeitos: {int(c.suspeitos)} ({c.pct_suspeitos:.2f}%) "
+              f"= regra A {int(c.regra_a)} + regra B {int(c.regra_b)} (sem repetir quem tem as duas).",
+              f"- Submissão em lote (reportada à parte, não é bot): {int(c.submissao_lote)} utilizadores, "
+              f"dos quais {int(c.so_submissao_lote)} sem outra classificação.",
+              f"- Ritmo sustentado depois do registo (máx. de eventos em 10 min), "
+              f"{int(c.utilizadores_com_atividade_apos_registo)} utilizadores: p50 {c.p50:.1f}, p90 {c.p90:.1f}, "
+              f"p99 {c.p99:.1f}, p99,5 {c.p99_5:.1f}, p99,9 {c.p99_9:.1f}, máximo {c.maximo:.0f}.",
+              f"- Sinalizados pela regra A com o limiar no p99 / p99,5 / p99,9: {int(c.sinalizados_a_p99)} / "
+              f"{int(c.sinalizados_a_p99_5)} / {int(c.sinalizados_a_p99_9)} (a query usa o p99,9).", '']
+        lote = flags[flags.submissao_lote]
+        if len(lote):
+            decadas = (lote.primeiro_dia.str[:3] + '0s').value_counts().sort_index()
+            L.append('Submissão em lote por década do primeiro rating: '
+                     + ', '.join(f'{d}: {n}' for d, n in decadas.items()) + '.')
+            L.append('')
+        susp = flags[flags.regra_a | flags.regra_b]
+        if len(susp):
+            L += ['| userId | Classificação | Justificação |', '|---|---|---|']
+            for r in susp.itertuples():
+                L.append(f'| {r.userId} | {r.classificacao} | {justificar(r)} |')
+        ref = ler(pasta, '10_flag_bots_referencia')
+        if ref is not None:
+            L += ['', '### Utilizadores de referência', '',
+                  '| userId | Caso | Esperado | Obtido | OK | Justificação |', '|---|---|---|---|---|---|']
+            for r in ref.itertuples():
+                L.append(f'| {r.userId} | {r.caso} | {r.esperado} | {r.obtido} | {r.ok} | {r.justificacao} |')
     if comparacao:
         L += ['', '## Versões Athena emuladas no DuckDB', '',
               'Emulação: divisão inteira entre inteiros e macros para `from_unixtime`, `date_format`, '
@@ -301,13 +402,17 @@ def main():
                 ok, nota = False, 'sem versão DuckDB'
             else:
                 ok, nota = iguais(a, b)
+            avisos = avisos_trino(ficheiro.read_text(encoding='utf-8'))
+            if avisos:
+                ok, nota = False, f'literal decimal numa conta (escala no Trino): {avisos[0]}'
+
             comparacao.append({'query': nome, 'linhas_duckdb': None if a is None else len(a),
                                'linhas_athena': linhas, 'iguais': 'sim' if ok else 'NÃO', 'nota': nota})
             print(f"  {nome:24} {linhas:>9,} linhas  iguais: {'sim' if ok else 'NÃO ' + nota}".replace(',', ' '))
         con.close()
         pd.DataFrame(comparacao).to_csv(destino / 'comparacao.csv', index=False)
 
-    verif = verificar(pasta, ds)
+    verif = verificar(pasta, ds) + referencia_bots(pasta, ds)
     segundos = time.perf_counter() - t0
     escrever_relatorio(pasta, ds, origem, resumo, verif, comparacao, segundos)
     for nome, valor, ok in verif:
