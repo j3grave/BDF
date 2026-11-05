@@ -29,3 +29,13 @@ run_at,dataset,query,formato,median_s,n_rows
 2026-11-01T21:17:28,32m,04_top_filmes,parquet_by_year,0.1259,10
 2026-11-01T21:17:28,32m,05_ratings_por_ano,parquet,0.0735,29
 2026-11-01T21:17:28,32m,05_ratings_por_ano,parquet_by_year,0.013,29
+2026-11-05T19:37:06,small,01_generos,parquet,0.0009,20
+2026-11-05T19:37:06,small,01_generos,parquet_by_year,0.0008,20
+2026-11-05T19:37:06,small,02_filmes_por_genero,parquet,0.0011,20
+2026-11-05T19:37:06,small,02_filmes_por_genero,parquet_by_year,0.001,20
+2026-11-05T19:37:07,small,03_avaliacoes_por_utilizador,parquet,0.0039,610
+2026-11-05T19:37:07,small,03_avaliacoes_por_utilizador,parquet_by_year,0.0028,610
+2026-11-05T19:37:07,small,04_top_filmes,parquet,0.0044,10
+2026-11-05T19:37:07,small,04_top_filmes,parquet_by_year,0.0041,10
+2026-11-05T19:37:07,small,05_ratings_por_ano,parquet,0.0022,23
+2026-11-05T19:37:07,small,05_ratings_por_ano,parquet_by_year,0.0014,23

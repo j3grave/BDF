@@ -154,6 +154,10 @@ def localizar(base, dataset, tabela, fonte):
 def ligar(base, dataset, fonte):
     """Cria uma ligação DuckDB com uma view por tabela encontrada. Devolve (ligação, origem)."""
     con = duckdb.connect()
+    # Fuso fixo em UTC: funções como to_timestamp devolvem TIMESTAMP WITH TIME ZONE e o ano
+    # ou o mês dependeriam do fuso da máquina. Este script usa epoch_ms (sem fuso), mas
+    # assim nenhuma query futura fica dependente do sítio onde corre.
+    con.execute("SET TimeZone = 'UTC'")
     origem = {}
     for t in TABELAS:
         loc = localizar(base, dataset, t, fonte)

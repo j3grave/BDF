@@ -86,6 +86,9 @@ def main():
             for _ in range(RUNS):
                 # Ligação nova em cada corrida, para que nenhuma corrida aproveite trabalho da anterior
                 con = duckdb.connect()
+                # Fuso fixo em UTC: funções como to_timestamp dependem do fuso da sessão.
+                # As queries de sql/ usam epoch_ms (sem fuso), mas assim nenhuma depende da máquina.
+                con.execute("SET TimeZone = 'UTC'")
                 t0 = time.perf_counter()
                 resultado = con.execute(query).fetchall()
                 times.append(time.perf_counter() - t0)

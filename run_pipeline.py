@@ -7,6 +7,7 @@ Objetivo:
         parquet    scripts/02_to_parquet.py  converter para Parquet (sem partição e por ano)
         benchmark  scripts/03_benchmark.py   medir o tempo das queries de sql/
         eda        scripts/04_eda.py         análise exploratória (figuras e relatório)
+        analises   scripts/05_analises.py    queries de análise de sql/analise/ (CSV e relatório)
 
 Entradas:
     config.yaml e a opção --dataset (small | 1m | 32m).
@@ -46,6 +47,7 @@ STEPS = {
     'parquet': 'scripts/02_to_parquet.py',
     'benchmark': 'scripts/03_benchmark.py',
     'eda': 'scripts/04_eda.py',
+    'analises': 'scripts/05_analises.py',
 }
 
 
