@@ -50,9 +50,13 @@ a tabela final por query (13.7) e os pendentes (13.9).
 - **Deteção de bots** (a validar com o Luís):
   - suspeitos: 0,33% no small e 0,10% no 1M, contra 34,4% e 46,8% com a regra original;
   - submissões em lote reportadas à parte.
-- **Coordenação entre contas** (bloco 6, só 1M): sem sinal acima da linha de base; as rajadas
-  mais fortes são contas novas no pico de registos de 20–21/11/2000.
-- **Ainda não feito:** nada no 32M nem no Athena.
+- **Coordenação entre contas** (bloco 6, 1M e 32M):
+  - 1M: sem sinal acima da linha de base; as rajadas mais fortes são contas novas no pico de
+    registos de 20–21/11/2000;
+  - 32M: mais rajadas do que na linha de base, mas o excesso está todo antes da escala de meias
+    estrelas (fevereiro de 2003) e explica-se pela mudança de escala, não por coordenação;
+    nenhuma comparação passa Bonferroni (com 200 permutações não é possível).
+- **Ainda não feito:** no 32M só correu o bloco 6; nada no Athena.
 
 ## 0. O que foi analisado e como
 
@@ -971,12 +975,19 @@ sentido se outras análises dependerem da classificação, além de `eventos`.
 - **DuckDB:** corrida com Parquet e com CSV, verificações do `05_analises.py` e comparação com o
   original.
 - **Athena:** emulação no DuckDB, igual à versão DuckDB.
-- **Nada foi executado no Athena nem no 32M.**
+- **Nada foi executado no Athena. No 32M só o bloco 6 (13.8.2).**
 
-### 13.8 Bloco 6: teste de coordenação entre contas (1M)
+### 13.8 Bloco 6: teste de coordenação entre contas
+
+#### 13.8.1 1M
 
 Script `scripts/06_coordenacao.py --dataset 1m` (20 permutações, ~2 s). Saídas em
-`results/1m/bots_coordenacao/`. Não corrido no 32M. **A validar com o Luís.**
+`results/1m/bots_coordenacao/`. **A validar com o Luís.**
+
+Depois do 32M, o script passou a testar também U ≥ 20 e a reportar Bonferroni e z. Voltei a
+correr o 1M: as 18 comparações anteriores e as contas do top 10 ficaram iguais, U ≥ 20 dá 0 rajadas,
+e nenhuma das 24 comparações passa o limiar corrigido (0,05/24 ≈ 0,0021; com 20 permutações o menor
+valor-p possível é 0,048).
 
 **Definição**
 - Rajada: (filme, nota extrema, hora UTC) com ≥ U utilizadores distintos e |nota − média do
@@ -1021,6 +1032,102 @@ as que a atividade dos filmes produz por acaso, e as mais fortes explicam-se pel
 de novembro de 2000 (filmes de culto e polarizadores, como Rocky Horror e Blair Witch). O 32M,
 com 200 mil contas e 25 anos, é onde o teste pode mostrar alguma coisa.
 
+#### 13.8.2 32M
+
+`python scripts/06_coordenacao.py --dataset 32m --repeticoes 200 --memoria 12GB`. Saídas em
+`results/32m/bots_coordenacao/`. **A validar com o Luís.**
+
+**Execução**
+- Fonte Parquet, `SET memory_limit = '12GB'`, pasta temporária do DuckDB em `data/32m/duckdb_tmp/`
+  (apagada no fim). Memória máxima do processo: ~6,3 GB.
+- Medição prévia: 1 permutação = 2,4 s. Logo 200 permutações (~8 min previstos) ficavam abaixo dos
+  30 min e correram as 200.
+- Tempo total: 596,8 s (9,9 min); 2,98 s por permutação em média.
+
+**Ajustes face ao 1M**
+- Análise principal com 0,5 e 5,0. Sensibilidade com ≤ 1,0 (0,5 e 1,0 juntos) e 5,0; o lado 5,0
+  é o mesmo e só conta uma vez.
+- U ∈ {3, 5, 10, 20}, D ∈ {1,5; 2}. 5 conjuntos de notas × 8 limiares = 40 comparações.
+- Bonferroni: 0,05/40 = 0,00125. Com 200 permutações o menor valor-p empírico é 1/201 = 0,005, por
+  isso **nenhuma comparação pode passar o limiar corrigido**. Seriam precisas ≥ 800 permutações
+  (~40 min ao ritmo medido). O z = (real − média)/desvio-padrão vai como informação complementar.
+
+**A permutação troca timestamps, não reordena linhas** (verificado no código, semente 1)
+- Cada avaliação de um filme recebe uma posição pela ordem de `hash(userId, movieId, semente)`, e a
+  avaliação na posição k recebe o k-ésimo timestamp desse filme por ordem cronológica.
+- Nos 84 432 filmes, o conjunto de timestamps (n.º, mínimo, máximo e soma dos hashes) e o conjunto
+  de avaliações (utilizador, nota) ficam iguais; o script falha se não ficarem.
+- 99,7% das avaliações ficam com outro timestamp e outra hora.
+- Exemplo, filme 604 (6 avaliações, `verificacao_permutacao.csv`): os mesmos 6 timestamps, noutras
+  avaliações.
+
+| userId | Nota | Timestamp original | Timestamp permutado |
+|---:|---:|---|---|
+| 84603 | 1,0 | 1997-02-03 20:41:19 | 2002-04-07 14:01:01 |
+| 92958 | 1,0 | 1997-05-06 14:53:11 | 1999-12-01 16:31:47 |
+| 186566 | 1,0 | 1999-12-01 16:31:47 | 1997-05-06 14:53:11 |
+| 1474 | 4,0 | 2000-01-31 23:33:34 | 2004-07-30 07:53:32 |
+| 200493 | 4,0 | 2002-04-07 14:01:01 | 2000-01-31 23:33:34 |
+| 27841 | 0,5 | 2004-07-30 07:53:32 | 1997-02-03 20:41:19 |
+
+**Real vs linha de base (seleção; as 40 comparações estão em `teste.csv`)**
+
+| Análise | Notas | U | D | Real | Média perm. | p95 | z | Valor-p |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| principal | 0,5 e 5,0 | 3 | 1,5 | 2 200 | 931,1 | 977,1 | 47,4 | 0,005 |
+| principal | 0,5 e 5,0 | 5 | 2 | 19 | 2,9 | 5,0 | 11,7 | 0,005 |
+| principal | 0,5 e 5,0 | 10 | 1,5 | 3 | 1,0 | 3,0 | 2,0 | 0,090 |
+| principal | 0,5 | 5 | 1,5 | 15 | 0,7 | 2,0 | 17,1 | 0,005 |
+| principal | 5,0 | 5 | 2 | 4 | 2,2 | 4,0 | 1,5 | 0,129 |
+| sensibilidade | ≤ 1,0 | 3 | 1,5 | 841 | 593,7 | 635,1 | 10,6 | 0,005 |
+| sensibilidade | ≤ 1,0 | 10 | 1,5 | 9 | 1,9 | 4,0 | 5,6 | 0,005 |
+| sensibilidade | ≤ 1,0 | 20 | 1,5 | 1 | 0 | 0 | — | 0,005 |
+| todas | todas | 20 | 2 | 0 | 0 | 0 | — | 1 |
+
+- Em 25 das 40 comparações o real fica acima de todas as 200 permutações (valor-p 0,005, o mínimo).
+  Nenhuma passa Bonferroni, pela resolução do teste, não por falta de excesso.
+- Só uma rajada chega a 20 utilizadores (sensibilidade ≤ 1,0, D ≥ 1,5), e nenhuma a 20 com D ≥ 2.
+
+**Rajadas por ano** (análise principal, U ≥ 3, D ≥ 1,5; `rajadas_por_ano.csv`)
+- 1996: 1 253 reais contra 527 nas permutações (25 304 contas novas, o maior ano de registos).
+- 1999–2000: 553 contra 151.
+- Até 2002: 2 016 reais contra 729. **De 2003 em diante: 184 contra 202**, sem excesso; 2005 e 2008
+  ficam até abaixo da linha de base.
+
+**Porque é que o excesso não é coordenação**
+- A escala de meias estrelas começa a 2003-02-18. Antes, 21,3% das avaliações eram 5,0; depois, 12,1%.
+  O ≤ 1,0 passa de 5,2% para 4,4%.
+- A permutação dentro do filme espalha as avaliações de antes de 2003 (com mais notas extremas) por
+  todo o período do filme. Assim, a linha de base subestima as notas extremas nas horas de muita
+  atividade antes de 2003, como o arranque em 1996 e 1999–2000.
+- O excesso coincide exatamente com esse período e desaparece depois. É um efeito da mudança de
+  escala, e mais em geral de a linha de base supor que a distribuição das notas não muda no tempo.
+- Proposta (não implementada): permutar dentro de (filme, era antes/depois de 2003-02-18), ou
+  dentro de (filme, ano), e repetir com ≥ 800 permutações para Bonferroni poder ser atingido.
+
+**As 10 rajadas mais fortes** (análise principal; `top10_rajadas.csv`, `top10_contas.csv`)
+- 94 presenças, 85 contas distintas. 82% estavam nas primeiras 24 h da conta e 28% voltaram a
+  avaliar mais de 24 h depois.
+- Nenhuma coincide com a "estreia" do filme no dataset (153 a 2 442 dias depois).
+- Sem a coluna de suspeitos do bloco 5: o `10_flag_bots.csv` do 32M ainda não existe.
+- Jaccard de referência entre pares de contas quaisquer: média 0,043, p95 0,130.
+- Três grupos:
+  - **26/11/1996, 05–06 h** (rajadas 2, 8, 9, 10: Mrs. Doubtfire, Pretty Woman, True Lies; nota 5).
+    Contas novas com ~40–60 avaliações e Jaccard alto (médio 0,20–0,35, máximo 0,67). É o perfil
+    de contas no formulário de registo de 1996, que mostrava os mesmos filmes populares.
+  - **Registo, outras datas** (1: Honey, I Shrunk the Kids, 0,5 por 14 contas novas em 2005-03-22 06 h,
+    63 avaliações do filme nessa hora; 3: Independence Day, 1997; 4 e 5: Blair Witch e Phantom
+    Menace, 1999-12-11). Também contas no registo; Jaccard 0,07–0,31.
+  - **22/05/1998, 12–14 h** (6: Body Snatchers; 7: Money Talks; nota 5). **O único caso com contas
+    antigas**: antiguidade mediana de 354 e 157 dias, 0% no registo, 103 e 74 avaliações do filme
+    nessa hora. Jaccard 0,11–0,16 (máximo 0,37). Não se explica pelo registo e é o caso a rever com
+    o Luís (ex.: uma página ou funcionalidade do site nesse dia).
+
+**Leitura**: no 32M, o teste com permutação simples dentro do filme mostra mais rajadas do que o
+acaso, mas o excesso está todo antes de 2003 e explica-se pela mudança da escala de notas. Depois de
+2003 as rajadas reais estão ao nível da linha de base. As mais fortes são, quase todas, contas no
+registo. Não há evidência de coordenação; o único padrão por explicar é 22/05/1998.
+
 ### 13.9 Pendentes
 
 **Validação pelo Luís**
@@ -1033,13 +1140,14 @@ com 200 mil contas e 25 anos, é onde o teste pode mostrar alguma coisa.
 - [ ] Um só conjunto de limites para os eventos (P7). Por agora ficam os do capítulo 9.
 - [ ] As faixas de `grupos_atividade` e a opção "só anos completos" de `evolucao_filmes`.
 - [ ] Qual notebook fica como oficial (P12). O notebook não foi alterado.
+- [ ] Bloco 6 (13.8.2): a linha de base estratificada por era e as ≥ 800 permutações, e o caso de
+  22/05/1998.
 
 **Execução no 32M** (só com autorização)
 - [ ] `python scripts/05_analises.py --dataset 32m --emular-athena`.
 - [ ] Antes disso, decidir onde gravar `10_flag_bots.csv` do 32M: tem 200 948 linhas, dezenas de MB,
   e o `.gitignore` versiona `results/**/*.csv`.
 - [ ] Calibrar a regra A no 32M (distribuição e sinalizados no p99, p99,5 e p99,9).
-- [ ] Bloco 6 no 32M: `python scripts/06_coordenacao.py --dataset 32m` (notas 0,5 e 5,0; `--repeticoes 10` se for lento).
 
 **Execução real no Athena**
 - [ ] Um script (por exemplo `scripts/athena_analises.py`, ainda por criar) que corra
