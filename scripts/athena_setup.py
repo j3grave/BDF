@@ -13,7 +13,8 @@ Objetivo:
 Entradas:
     sql/athena/ddl/*.sql                 DDL com os marcadores ${database}, ${bucket} e ${pasta}
     data/cloud/<pasta>/                  criado pelo prepare_cloud.py (para comparar schemas e contagens)
-    config.yaml (secção aws)             região e buckets (ou as opções da linha de comandos)
+    config.yaml (secção aws)             região e buckets (ou as opções da linha de comandos;
+                                         se ficarem a null, derivados do ID da conta)
 
 Saídas:
     Base de dados e tabelas no Glue Data Catalog. Localmente, só o resumo no ecrã.
@@ -21,9 +22,10 @@ Saídas:
 
 Como correr:
     python scripts/athena_setup.py --dry-run                     sem AWS: verifica o DDL e mostra-o
+    python scripts/athena_setup.py --dataset small --recriar     apaga e recria as tabelas
     python scripts/athena_setup.py --bucket-dados X --bucket-resultados Y
-    python scripts/athena_setup.py --recriar                     apaga e recria as tabelas
-    (por omissão usa o dataset 32m; apagar uma tabela EXTERNAL não apaga os dados no S3)
+    (por omissão usa o dataset do config.yaml; apagar uma tabela EXTERNAL não apaga os dados no S3)
+    Normalmente corre dentro do passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
 import argparse
 import re
@@ -31,9 +33,9 @@ import sys
 
 import duckdb
 
-from athena_common import ATHENA_SQL, Athena, AthenaError, add_aws_args, aws_settings, read_sql, require_buckets
+from athena_common import ATHENA_SQL, Athena, AthenaError, add_aws_args, aws_settings, read_sql, resolve_buckets
 from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config
-from prepare_cloud import ATHENA_TYPES, DATASET_OMISSAO, count_of, counts_by_year, schema_of
+from prepare_cloud import ATHENA_TYPES, count_of, counts_by_year, schema_of
 
 # Apanha o nome da tabela, a lista de colunas e (se existir) a lista de partições de um CREATE TABLE
 RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
@@ -41,11 +43,10 @@ RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s
 
 
 def parse_args():
-    """Lê --dataset (por omissão 32m), --recriar e as opções da AWS."""
+    """Lê --dataset (por omissão o do config.yaml), --recriar e as opções da AWS."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset', choices=list(DATASETS), default=DATASET_OMISSAO,
-                        help=f'dataset (por omissão: {DATASET_OMISSAO})')
+    parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
     parser.add_argument('--recriar', action='store_true',
                         help='DROP TABLE antes de criar (não apaga os dados no S3)')
     add_aws_args(parser)
@@ -126,7 +127,7 @@ def main():
         sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. '
                  f"Corre primeiro: python scripts/prepare_cloud.py --dataset {cfg['dataset']}")
     if not args.dry_run:
-        require_buckets(aws)
+        resolve_buckets(aws)
 
     params = {'database': aws['database'], 'pasta': aws['pasta'],
               'bucket': aws.get('bucket_dados') or '<bucket-dados>'}

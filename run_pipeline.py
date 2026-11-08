@@ -8,9 +8,13 @@ Objetivo:
         benchmark  scripts/03_benchmark.py   medir o tempo das queries de sql/
         eda        scripts/04_eda.py         análise exploratória (figuras e relatório)
         analises   scripts/05_analises.py    queries de análise de sql/analise/ (CSV e relatório)
+    E um passo da fase 2 que só corre quando é pedido com --steps cloud (usa a AWS e tem custos):
+        cloud      scripts/cloud_pipeline.py  S3 -> Glue -> Athena: upload, catálogo e benchmark
 
 Entradas:
     config.yaml e a opção --dataset (small | 1m | 32m).
+    Só para o passo cloud: --bucket-dados e --bucket-resultados (por omissão, os do config.yaml
+    ou, se aí estiverem a null, os derivados do ID da conta AWS).
 
 Saídas:
     As de cada passo (ver o cabeçalho de cada script), mais
@@ -19,6 +23,7 @@ Saídas:
 Como correr:
     python run_pipeline.py --dataset small                       todos os passos
     python run_pipeline.py --dataset 1m --steps ingest parquet   só alguns passos
+    python run_pipeline.py --dataset small --steps cloud         fase cloud (AWS Academy Learner Lab)
 """
 import argparse
 import subprocess
@@ -41,14 +46,18 @@ if sys.version_info < PYTHON_MINIMO:
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts'))
 from common import DATASETS, ROOT, append_row, load_config, now  # noqa: E402
 
-# Passos disponíveis, pela ordem em que correm por omissão
+# Passos disponíveis, pela ordem em que correm
 STEPS = {
     'ingest': 'scripts/01_ingest.py',
     'parquet': 'scripts/02_to_parquet.py',
     'benchmark': 'scripts/03_benchmark.py',
     'eda': 'scripts/04_eda.py',
     'analises': 'scripts/05_analises.py',
+    'cloud': 'scripts/cloud_pipeline.py',
 }
+# O passo cloud fica fora dos passos por omissão: usa a AWS (credenciais e custos),
+# por isso só corre quando é pedido explicitamente com --steps cloud.
+STEPS_OMISSAO = [step for step in STEPS if step != 'cloud']
 
 
 def main():
@@ -56,17 +65,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
-    parser.add_argument('--steps', nargs='+', choices=list(STEPS), default=list(STEPS))
+    parser.add_argument('--steps', nargs='+', choices=list(STEPS), default=STEPS_OMISSAO,
+                        help=f"por omissão: {' '.join(STEPS_OMISSAO)} (o cloud só com --steps cloud)")
+    parser.add_argument('--bucket-dados', dest='bucket_dados', help='só passo cloud: bucket com data/cloud/<pasta>/')
+    parser.add_argument('--bucket-resultados', dest='bucket_resultados',
+                        help='só passo cloud: bucket dos resultados do Athena')
     args = parser.parse_args()
     cfg = load_config(args.dataset)
 
     for step in args.steps:
         # Cada passo corre num processo Python separado (o mesmo Python deste script,
         # sys.executable), tal como se fosse chamado à mão no terminal.
-        # check=True faz o pipeline parar se um passo falhar, em vez de continuar com dados incompletos.
+        # Se um passo falhar, o pipeline pára, em vez de continuar com dados incompletos.
         comando = [sys.executable, str(ROOT / STEPS[step]), '--dataset', cfg['dataset']]
+        if step == 'cloud':
+            if args.bucket_dados:
+                comando += ['--bucket-dados', args.bucket_dados]
+            if args.bucket_resultados:
+                comando += ['--bucket-resultados', args.bucket_resultados]
         t0 = time.perf_counter()
-        subprocess.run(comando, check=True)
+        resultado = subprocess.run(comando)
+        if resultado.returncode != 0:
+            # Sem traceback: o passo já explicou o erro. Para o pipeline, sem registar o tempo.
+            sys.exit(f'[{step}] falhou (código {resultado.returncode}); pipeline parado.')
         seconds = round(time.perf_counter() - t0, 2)
 
         append_row(cfg['paths']['results'] / 'pipeline_runs.csv',

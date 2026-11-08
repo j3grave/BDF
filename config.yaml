@@ -5,11 +5,18 @@ dataset: small          # small | 1m | 32m
 data_dir: data          # downloads, CSV normalizados e Parquet: data/<dataset>/...
 results_dir: results    # tamanhos, tempos e benchmarks
 
-# Fase 2 (scripts/athena_setup.py e scripts/athena_benchmark.py). Os nomes dos buckets não são
-# segredos e podem ficar aqui; as credenciais NUNCA (vão para ~/.aws/credentials).
+# Fase 2 (passo cloud: python run_pipeline.py --dataset small --steps cloud).
+# Este dataset (acima) é também o que os scripts da fase 2 usam por omissão.
+# As credenciais NUNCA ficam aqui (vão para ~/.aws/credentials).
 # O AWS Academy Learner Lab só permite us-east-1 e us-west-2.
+#
+# Buckets: null significa "derivado da conta". Cada aluno fica com os seus, sem configurar nada:
+#   bdf26-g1-dados-<ID da conta>       ficheiros de data/cloud/<pasta>/
+#   bdf26-g1-resultados-<ID da conta>  resultados das queries do Athena
+# Para usar outros buckets, escreve aqui o nome ou passa --bucket-dados / --bucket-resultados.
+# Não escrevas aqui nomes com o ID da conta: o config.yaml é versionado.
 aws:
   region: us-east-1
-  bucket_dados: null        # bucket com data/cloud/<pasta>/, ex.: bdf26-g1-movielens-dados
-  bucket_resultados: null   # resultados das queries do Athena, ex.: bdf26-g1-athena-resultados
+  bucket_dados: null        # null = bdf26-g1-dados-<ID da conta>
+  bucket_resultados: null   # null = bdf26-g1-resultados-<ID da conta>
   workgroup: primary

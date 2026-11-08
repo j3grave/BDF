@@ -5,7 +5,9 @@ Objetivo:
     Reunir num só sítio o que o athena_setup.py e o athena_benchmark.py usam: as opções
     da linha de comandos da AWS (região, buckets), a leitura dos .sql de sql/athena/ e
     uma pequena classe que submete uma query ao Athena, espera que termine e devolve as
-    estatísticas (tempo e bytes lidos).
+    estatísticas (tempo e bytes lidos). Também resolve os nomes dos buckets: se não vierem
+    da linha de comandos nem do config.yaml, são derivados do ID da conta AWS, para cada
+    aluno ter os seus sem configurar nada.
 
 Entradas:
     config.yaml (secção aws) e as opções --region, --bucket-dados, --bucket-resultados, --workgroup.
@@ -20,6 +22,7 @@ Como correr:
 """
 import csv
 import io
+import platform
 import time
 from string import Template
 from urllib.parse import urlparse
@@ -35,11 +38,25 @@ USD_POR_TB = 5.0        # preço do Athena por TB lido (us-east-1), para estimar
 # Códigos de erro da AWS que, no Learner Lab, quase sempre querem dizer "sessão expirada"
 ERROS_CREDENCIAIS = {'ExpiredTokenException', 'ExpiredToken', 'UnrecognizedClientException',
                      'InvalidClientTokenId', 'InvalidAccessKeyId', 'SignatureDoesNotMatch'}
+
+# Nomes dos buckets quando não vêm da linha de comandos nem do config.yaml (null).
+# O sufixo é o ID da conta (12 dígitos): os nomes de buckets são únicos em toda a AWS,
+# por isso cada aluno precisa dos seus. O ID só aparece no ecrã, nunca nos ficheiros do repositório.
+PREFIXO_BUCKETS = {'bucket_dados': 'bdf26-g1-dados', 'bucket_resultados': 'bdf26-g1-resultados'}
+
+if platform.system() == 'Darwin':
+    _COLAR = ('   e, no terminal, escrever o bloco no ficheiro das credenciais:\n'
+              '     mkdir -p ~/.aws && pbpaste > ~/.aws/credentials\n')
+else:
+    _COLAR = ('   e colá-lo em ~/.aws/credentials (no Windows: %UserProfile%\\.aws\\credentials),\n'
+              '   substituindo o conteúdo anterior.\n')
 MENSAGEM_CREDENCIAIS = (
     'Erro: as credenciais AWS não existem, expiraram ou são inválidas.\n'
-    'No AWS Academy Learner Lab: "Start Lab", depois "AWS Details" > "AWS CLI: Show", e copiar\n'
-    'o bloco [default] (com aws_session_token) para ~/.aws/credentials. As credenciais\n'
-    'mudam a cada sessão do laboratório. Testar com: aws sts get-caller-identity')
+    'No AWS Academy Learner Lab (as credenciais mudam a cada sessão e duram cerca de 4 horas):\n'
+    '1. "Start Lab" e esperar que o indicador fique verde.\n'
+    '2. "AWS Details" > "AWS CLI: Show" e copiar o bloco [default] (inclui aws_session_token),\n'
+    + _COLAR +
+    '3. Voltar a correr o comando.')
 
 
 class AthenaError(Exception):
@@ -72,13 +89,45 @@ def aws_settings(cfg, args):
     return aws
 
 
-def require_buckets(aws):
-    """Termina com erro se faltar o nome de algum bucket (exceto em --dry-run, que não os usa)."""
-    em_falta = [nome for nome in ('bucket_dados', 'bucket_resultados') if not aws.get(nome)]
+def is_credentials_error(erro):
+    """True se o erro do boto3 quer dizer credenciais em falta, expiradas ou inválidas."""
+    if type(erro).__name__ in ('NoCredentialsError', 'PartialCredentialsError'):
+        return True
+    codigo = getattr(erro, 'response', {}).get('Error', {}).get('Code', '')
+    return codigo in ERROS_CREDENCIAIS
+
+
+def boto3_session(region):
+    """Sessão do boto3 na região indicada (termina com uma mensagem clara se faltar o boto3)."""
+    try:
+        import boto3
+    except ImportError:
+        raise SystemExit('Erro: falta o boto3. Instala-o com: pip install -r requirements.txt') from None
+    return boto3.Session(region_name=region)
+
+
+def account_id(session):
+    """ID da conta AWS das credenciais atuais. Termina com instruções se não houver credenciais válidas."""
+    try:
+        return session.client('sts').get_caller_identity()['Account']
+    except Exception as erro:
+        if is_credentials_error(erro):
+            raise SystemExit(MENSAGEM_CREDENCIAIS) from erro
+        raise
+
+
+def resolve_buckets(aws, session=None):
+    """Preenche os nomes dos buckets que faltam com os derivados do ID da conta.
+
+    Prioridade: linha de comandos > config.yaml > bdf26-g1-dados-<conta> / bdf26-g1-resultados-<conta>.
+    Só contacta a AWS (STS) se faltar algum nome.
+    """
+    em_falta = [chave for chave in PREFIXO_BUCKETS if not aws.get(chave)]
     if em_falta:
-        opcoes = ', '.join('--' + nome.replace('_', '-') for nome in em_falta)
-        raise SystemExit(f'Erro: falta o nome do bucket ({opcoes}). '
-                         'Indica-o na linha de comandos ou na secção aws do config.yaml.')
+        conta = account_id(session or boto3_session(aws['region']))
+        for chave in em_falta:
+            aws[chave] = f'{PREFIXO_BUCKETS[chave]}-{conta}'
+    return aws
 
 
 def read_sql(path, params):
@@ -98,11 +147,7 @@ class Athena:
     def __init__(self, aws, athena_client=None, s3_client=None):
         # Os clientes podem ser passados de fora (útil para testar sem AWS).
         if athena_client is None or s3_client is None:
-            try:
-                import boto3
-            except ImportError:
-                raise SystemExit('Erro: falta o boto3. Instala-o com: pip install -r requirements.txt') from None
-            session = boto3.Session(region_name=aws['region'])
+            session = boto3_session(aws['region'])
             athena_client = athena_client or session.client('athena')
             s3_client = s3_client or session.client('s3')
         self.athena = athena_client
@@ -116,8 +161,7 @@ class Athena:
         try:
             return funcao(**kwargs)
         except Exception as erro:
-            codigo = getattr(erro, 'response', {}).get('Error', {}).get('Code', '')
-            if codigo in ERROS_CREDENCIAIS or type(erro).__name__ in ('NoCredentialsError', 'PartialCredentialsError'):
+            if is_credentials_error(erro):
                 raise SystemExit(MENSAGEM_CREDENCIAIS) from erro
             raise
 

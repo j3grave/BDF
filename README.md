@@ -141,7 +141,9 @@ python run_pipeline.py --dataset small                 # todos os passos
 python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
 ```
 
-Os passos são `ingest`, `parquet`, `benchmark` e `eda`. Sem `--dataset` usa-se o valor de `config.yaml`.
+Os passos são `ingest`, `parquet`, `benchmark`, `eda` e `analises`. Sem `--dataset` usa-se o valor de `config.yaml`.
+Há ainda o passo `cloud` (fase 2, usa a AWS), que só corre quando é pedido: ver
+[Fase cloud](#fase-cloud-aws-academy-learner-lab).
 Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_to_parquet.py --dataset 1m`.
 
 | Passo | Script | O que faz |
@@ -167,6 +169,7 @@ BDF/
 │   ├── 02_to_parquet.py
 │   ├── 03_benchmark.py
 │   ├── 04_eda.py
+│   ├── cloud_pipeline.py       # fase 2: passo cloud (upload, catálogo e benchmark num só comando)
 │   ├── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
 │   ├── athena_common.py        # fase 2: opções AWS e cliente mínimo do Athena
 │   ├── athena_setup.py         # fase 2: DDL no Glue Data Catalog e validação
@@ -185,6 +188,7 @@ BDF/
     ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
     ├── pipeline_runs.csv       # tempo de cada passo
     ├── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
+    ├── cloud_benchmarks.csv    # fase 2: DuckDB vs Athena (tempo, MB lidos, n.º de linhas)
     └── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
 ```
 
@@ -199,16 +203,96 @@ mkdir -p data
 ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
 ```
 
+## Fase cloud (AWS Academy Learner Lab)
+
+Leva o dataset para a AWS (S3 → Glue Data Catalog → Athena) e compara o Athena com o DuckDB, na
+conta AWS de cada um, com um único comando. Não é preciso configurar buckets nem instalar a AWS CLI.
+
+### Pré-requisitos
+
+- O ambiente da secção [Ambiente](#ambiente), com o `requirements.txt` instalado (inclui o `boto3`).
+  Não é preciso a AWS CLI: o upload é feito pelo próprio pipeline.
+- Os passos `ingest` e `parquet` do dataset já corridos, por exemplo
+  `python run_pipeline.py --dataset small --steps ingest parquet`.
+- Uma sessão do Learner Lab ativa (indicador verde).
+
+### Credenciais (em cada sessão do lab)
+
+As credenciais do Learner Lab são temporárias: mudam a cada "Start Lab" e expiram ao fim de
+cerca de 4 horas. Em cada sessão:
+
+1. "Start Lab" e esperar que o indicador fique verde.
+2. "AWS Details" > "AWS CLI: Show" e copiar o bloco `[default]` (as três linhas, incluindo `aws_session_token`).
+3. Escrever o bloco em `~/.aws/credentials`, substituindo o anterior:
+
+   ```bash
+   mkdir -p ~/.aws && pbpaste > ~/.aws/credentials     # macOS: escreve o que está copiado
+   ```
+
+   No Windows e no Linux, colar à mão num editor (`%UserProfile%\.aws\credentials` no Windows).
+
+O ficheiro fica fora do repositório. As credenciais nunca vão para o `config.yaml` nem para o git.
+
+### Comando único
+
+```bash
+python run_pipeline.py --dataset small --steps cloud
+```
+
+O passo `cloud` não faz parte dos passos por omissão: só corre quando é pedido com `--steps cloud`.
+O script é o `scripts/cloud_pipeline.py` e faz, por ordem:
+
+1. **Credenciais.** Se faltarem ou tiverem expirado, termina e explica como as renovar.
+2. **`data/cloud/<pasta>/`.** Corre o `prepare_cloud.py` se a pasta não existir ou for mais antiga
+   do que o Parquet da fase 1 (ver [Preparação para a cloud](#preparação-para-a-cloud)).
+3. **Buckets.** Cria-os em `us-east-1`, se ainda não existirem. Os nomes vêm do ID da conta:
+   `bdf26-g1-dados-<ID da conta>` e `bdf26-g1-resultados-<ID da conta>`. Para usar outros, passa
+   `--bucket-dados` e `--bucket-resultados` ou escreve-os na secção `aws` do `config.yaml`.
+   O ID da conta só aparece no ecrã e nunca é escrito em ficheiros do repositório.
+4. **Upload** de `data/cloud/<pasta>/` para `s3://<bucket-dados>/<pasta>/`, com o `boto3`. Só envia
+   os ficheiros novos ou com tamanho diferente, como o `aws s3 sync`, e mostra a percentagem nos
+   ficheiros grandes. Não apaga nada no S3.
+5. **Catálogo.** `athena_setup.py --recriar`: base de dados `movielens_<dataset>`, seis tabelas,
+   partições (`MSCK REPAIR TABLE`) e validação das contagens contra os ficheiros locais. Corre depois
+   do upload, para o `MSCK REPAIR TABLE` ver as partições no S3.
+6. **Benchmark.** `athena_benchmark.py`, só se a validação do passo 5 passar. As linhas só são
+   escritas em `results/cloud_benchmarks.csv` se cada query devolver o mesmo n.º de linhas no DuckDB
+   e no Athena.
+
+Se algum passo falhar, o pipeline pára com erro. Pode voltar a correr-se: os buckets já existentes e os
+ficheiros já enviados são reaproveitados.
+
+### Custos esperados
+
+O Athena cobra 5 USD por TB lido, com um mínimo de 10 MB por query. O S3, para estes tamanhos, custa
+cêntimos por mês.
+
+| Dataset | Dados lidos no Athena (setup + benchmark) | Custo aproximado |
+|---|---|---|
+| `small` | poucos MB (conta o mínimo de 10 MB por query) | < 0,01 USD |
+| `32m` | cerca de 12 GB, quase tudo nas corridas sobre o CSV | ≈ 0,06 USD por benchmark |
+
+O Learner Lab tem um orçamento limitado: testa sempre primeiro com o `small`.
+
+### Erros comuns
+
+| Sintoma | Causa | O que fazer |
+|---|---|---|
+| `ExpiredToken`, `InvalidClientTokenId` ou "as credenciais AWS não existem, expiraram ou são inválidas" | A sessão do lab terminou ou o `~/.aws/credentials` tem credenciais de uma sessão anterior. | "Start Lab" e copiar de novo o bloco de "AWS Details" (ver acima). |
+| O Athena devolve 0 linhas no `ratings_part`, ou a validação diz "contagens por ano diferentes" | As partições não estão registadas no catálogo: o `MSCK REPAIR TABLE` correu antes do upload ou não correu. | Voltar a correr `python run_pipeline.py --dataset small --steps cloud`. O setup recria as tabelas e corre o `MSCK REPAIR TABLE` depois do upload. |
+| Os buckets ou as tabelas desapareceram | O "Reset" do Learner Lab apaga todos os recursos da conta (buckets, objetos e o catálogo do Glue). Um simples "End Lab" não os apaga. | Voltar a correr o comando único: os buckets são recriados e os dados reenviados. |
+| "o bucket ... existe mas pertence a outra conta" | Os nomes de buckets são únicos em toda a AWS. Só acontece se escreveres à mão um nome já usado por outra pessoa. | Repor `null` no `config.yaml` ou escolher outro nome. |
+
 ## Preparação para a cloud
 
-Fase 2 do projeto: levar os dados para AWS (S3 → Glue Data Catalog → Athena). O script
-`scripts/prepare_cloud.py` só prepara os ficheiros localmente, sem chamadas à AWS. Gera em
+O passo `cloud` corre este script automaticamente quando é preciso; também pode correr-se sozinho.
+O script `scripts/prepare_cloud.py` só prepara os ficheiros localmente, sem chamadas à AWS. Gera em
 `data/cloud/<pasta>/` um espelho exato do que vai para o S3. Precisa dos resultados dos passos
 `ingest` e `parquet` do dataset.
 
 ```bash
 python scripts/prepare_cloud.py --dataset small   # teste rápido
-python scripts/prepare_cloud.py                   # por omissão: 32m
+python scripts/prepare_cloud.py                   # por omissão: o dataset do config.yaml
 ```
 
 Estrutura gerada (para o 32M, `<pasta>` = `ml-32m`; para o small, `ml-latest-small`; para o 1M, `ml-1m`):
@@ -238,17 +322,14 @@ data/cloud/ml-32m/
   n.º de linhas, o schema e os tipos para o DDL do Athena, mais a lista de anos do `ratings_part`.
 - O benchmark DuckDB vs Athena deve ler os ficheiros de `data/cloud/`, que são os mesmos que vão para o S3.
 
-Upload para o S3 (fase seguinte; **apenas documentado, ainda não executado**):
-
-```bash
-aws s3 sync data/cloud/ml-32m/ s3://<bucket-dados>/ml-32m/
-```
+O upload para o S3 é feito pelo passo `cloud` (ver [Fase cloud](#fase-cloud-aws-academy-learner-lab)).
 
 As credenciais AWS (`.aws/`, `*.env`, ficheiros de chaves) estão no `.gitignore` e nunca devem ser versionadas.
 
 ## Athena: catálogo e benchmark
 
-Depois do upload, dois scripts tratam do resto. Ambos usam o `boto3`, que está no `requirements.txt`.
+Depois do upload, dois scripts tratam do resto. O passo `cloud` corre-os pela ordem certa; também
+podem correr-se sozinhos. Ambos usam o `boto3`, que está no `requirements.txt`.
 
 | Script | O que faz |
 |---|---|
@@ -266,16 +347,10 @@ cabeçalho de cada ficheiro:
 A query `06_ratings_desde_2015` (`WHERE year >= 2015`) é nova na fase 2. Mostra o partition pruning
 e, para não alterar o benchmark da fase 1, a versão DuckDB está em `sql/cloud/`.
 
-**Credenciais no AWS Academy Learner Lab.** O laboratório só permite as regiões `us-east-1` e
-`us-west-2`, e as credenciais mudam a cada sessão:
-
-1. "Start Lab", e esperar que o indicador fique verde.
-2. "AWS Details" > "AWS CLI: Show". Copiar o bloco `[default]` (inclui `aws_session_token`) para
-   `~/.aws/credentials`, fora do repositório.
-3. Confirmar com `aws sts get-caller-identity`.
-
-Os nomes dos buckets ficam na secção `aws` do `config.yaml`, ou passam-se com `--bucket-dados` e
-`--bucket-resultados`.
+As credenciais e os buckets são os da [Fase cloud](#fase-cloud-aws-academy-learner-lab). Sem
+`--dataset`, os scripts usam o dataset do `config.yaml`, como os outros passos. Sem
+`--bucket-dados`/`--bucket-resultados`, usam os do `config.yaml` ou, se aí estiverem a `null`, os
+derivados do ID da conta.
 
 ```bash
 # Sem AWS: verificar o DDL, ver o SQL que seria enviado e correr só a parte DuckDB
@@ -283,13 +358,13 @@ python scripts/athena_setup.py --dry-run
 python scripts/athena_benchmark.py --dry-run
 python scripts/athena_benchmark.py --engines duckdb
 
-# Com AWS (depois do aws s3 sync)
-python scripts/athena_setup.py --bucket-dados <bucket-dados> --bucket-resultados <bucket-resultados>
-python scripts/athena_benchmark.py --bucket-dados <bucket-dados> --bucket-resultados <bucket-resultados>
+# Com AWS (depois do upload; normalmente basta o passo cloud)
+python scripts/athena_setup.py --dataset small --recriar
+python scripts/athena_benchmark.py --dataset small
 ```
 
 O benchmark completo do 32M lê cerca de 12 GB no Athena. Quase tudo vem das 12 corridas sobre o
-CSV, que leem 877 MB cada. A 5 USD por TB, custa menos de 0,10 USD.
+CSV, que leem 877 MB cada. A 5 USD por TB, custa cerca de 0,06 USD.
 
 ## Tecnologias
 

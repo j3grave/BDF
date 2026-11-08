@@ -27,9 +27,8 @@ Saídas:
 
 Como correr:
     python scripts/prepare_cloud.py --dataset small
-    python scripts/prepare_cloud.py               (por omissão usa o 32m)
-    Depois, para enviar (fase seguinte, não feito aqui):
-    aws s3 sync data/cloud/ml-32m/ s3://<bucket-dados>/ml-32m/
+    python scripts/prepare_cloud.py               (por omissão usa o dataset do config.yaml)
+    O envio para o S3 é feito pelo passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
 import argparse
 import shutil
@@ -43,17 +42,13 @@ from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config, now, si
 # Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
 ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
 
-# O dataset por omissão deste script é o 32m (é o que vai para a cloud), e não o do
-# config.yaml, que na fase 1 está em small para os testes rápidos.
-DATASET_OMISSAO = '32m'
 
 
 def parse_args():
-    """Lê a opção --dataset (small | 1m | 32m, por omissão 32m)."""
+    """Lê a opção --dataset (small | 1m | 32m; por omissão, o do config.yaml, como nos outros passos)."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset', choices=list(DATASETS), default=DATASET_OMISSAO,
-                        help=f'dataset a preparar (por omissão: {DATASET_OMISSAO})')
+    parser.add_argument('--dataset', choices=list(DATASETS), help='dataset a preparar (sobrepõe o valor de config.yaml)')
     return parser.parse_args()
 
 
@@ -134,7 +129,7 @@ def write_manifest(path, info):
     L.append(f'- Dataset: `{ds}`')
     L.append(f'- Gerado em: {info["gerado_em"]} (DuckDB {duckdb.__version__}, {info["segundos"]:.1f} s)')
     L.append(f'- Pasta local: `data/cloud/{pasta}/` (origem: `data/{ds}/parquet/` e `data/{ds}/csv/ratings.csv`)')
-    L.append(f'- Upload (fase seguinte, não executado): `aws s3 sync data/cloud/{pasta}/ s3://<bucket-dados>/{pasta}/`')
+    L.append(f'- Upload: `python run_pipeline.py --dataset {ds} --steps cloud` (envia para `s3://<bucket-dados>/{pasta}/`)')
     L.append('- Verificações: contagens iguais à origem, soma das partições igual a `ratings`, contagens por ano '
              'iguais ao `ratings_by_year` da fase 1, tipos iguais à origem, `year` só no nome das pastas, '
              'compressão zstd e só ficheiros da tabela em cada pasta. Todas passaram.')
