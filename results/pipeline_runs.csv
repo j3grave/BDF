@@ -10,3 +10,5 @@ run_at,dataset,step,seconds
 2026-11-01T21:17:28,32m,benchmark,2.91
 2026-11-01T21:17:32,32m,eda,3.82
 2026-11-05T19:55:26,small,analises,0.58
+2026-11-08T14:48:19,32m,ingest,0.54
+2026-11-08T14:48:20,32m,parquet,1.35
