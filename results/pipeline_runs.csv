@@ -13,3 +13,8 @@ run_at,dataset,step,seconds
 2026-11-08T14:48:19,32m,ingest,0.54
 2026-11-08T14:48:20,32m,parquet,1.35
 2026-11-08T16:03:22,small,cloud,111.17
+2026-11-09T18:16:30,small,ingest,0.57
+2026-11-09T18:16:30,small,parquet,0.18
+2026-11-09T18:16:30,small,benchmark,0.41
+2026-11-09T18:16:33,small,eda,2.87
+2026-11-09T18:16:34,small,analises,0.62

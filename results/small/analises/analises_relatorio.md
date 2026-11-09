@@ -31,22 +31,22 @@ Gerado por `scripts/05_analises.py` em 0.3 s (sessão DuckDB em UTC).
 
 | Query | Linhas | Segundos | CSV |
 |---|---:|---:|---|
-| 10_flag_bots | 610 | 0.014 | `10_flag_bots.csv` |
-| 10_flag_bots_calibracao | 1 | 0.001 | `10_flag_bots_calibracao.csv` |
-| anual | 23 | 0.004 | `anual.csv` |
-| distribuicao | 10 | 0.003 | `distribuicao.csv` |
-| eventos | 0 | 0.021 | `eventos.csv` |
-| evolucao_filmes | 366 | 0.007 | `evolucao_filmes.csv` |
-| filmes_ano | 39 | 0.007 | `filmes_ano.csv` |
-| filtros_eventos | 1 | 0.019 | `filtros_eventos.csv` |
-| grupos_atividade | 108 | 0.004 | `grupos_atividade.csv` |
-| integridade | 1 | 0.003 | `integridade.csv` |
-| mensal | 267 | 0.005 | `mensal.csv` |
-| perfis_ativos | 28 | 0.005 | `perfis_ativos.csv` |
-| perfis_cumulativos | 39 | 0.006 | `perfis_cumulativos.csv` |
-| ponderado | 10 | 0.003 | `ponderado.csv` |
-| qualidade | 1 | 0.005 | `qualidade.csv` |
-| valores_ano | 195 | 0.002 | `valores_ano.csv` |
+| 10_flag_bots | 610 | 0.077 | `10_flag_bots.csv` |
+| 10_flag_bots_calibracao | 1 | 0.011 | `10_flag_bots_calibracao.csv` |
+| anual | 23 | 0.013 | `anual.csv` |
+| distribuicao | 10 | 0.011 | `distribuicao.csv` |
+| eventos | 0 | 0.036 | `eventos.csv` |
+| evolucao_filmes | 366 | 0.013 | `evolucao_filmes.csv` |
+| filmes_ano | 39 | 0.022 | `filmes_ano.csv` |
+| filtros_eventos | 1 | 0.030 | `filtros_eventos.csv` |
+| grupos_atividade | 108 | 0.015 | `grupos_atividade.csv` |
+| integridade | 1 | 0.016 | `integridade.csv` |
+| mensal | 267 | 0.015 | `mensal.csv` |
+| perfis_ativos | 28 | 0.010 | `perfis_ativos.csv` |
+| perfis_cumulativos | 39 | 0.011 | `perfis_cumulativos.csv` |
+| ponderado | 10 | 0.011 | `ponderado.csv` |
+| qualidade | 1 | 0.013 | `qualidade.csv` |
+| valores_ano | 195 | 0.012 | `valores_ano.csv` |
 
 ## Deteção de bots (10_flag_bots, a validar com o Luís)
 
@@ -71,26 +71,3 @@ Submissão em lote por década do primeiro rating: 1990s: 9, 2000s: 3, 2010s: 1.
 | 89 | 518 avaliações em 23 min no registo, ~2 s cada: candidato | suspeito (regra B) | suspeito (regra B) | sim | regra B: 481 eventos nas primeiras 24 h, mediana de 2 s entre eventos (>= 100 e <= 2 s); sinais complementares: 0/3 |
 | 610 | 566 avaliações numa hora, ~4 s cada, ~6 meses depois do registo | suspeito (regra A) | suspeito (regra A) | sim | regra A: 119 eventos em 10 min depois do registo (limiar p99,9 = 114.8), mediana de 4 s entre eventos; sinais complementares: 0/3 |
 | 534 | muitas avaliações no mesmo segundo (2016): não é bot | submissão em lote | submissão em lote | sim | submissão em lote: até 128 avaliações no mesmo segundo (4% dos eventos com 2 ou mais), primeiro dia 2016-04-04; sinais complementares: 0/3 |
-
-## Versões Athena emuladas no DuckDB
-
-Emulação: divisão inteira entre inteiros e macros para `from_unixtime`, `date_format`, `sequence` e `approx_percentile`. Valida a lógica, não a sintaxe do Trino.
-
-| Query | Linhas DuckDB | Linhas Athena (emul.) | Iguais | Nota |
-|---|---:|---:|---|---|
-| 10_flag_bots | 610 | 610 | sim |  |
-| 10_flag_bots_calibracao | 1 | 1 | sim |  |
-| anual | 23 | 23 | sim |  |
-| distribuicao | 10 | 10 | sim |  |
-| eventos | 0 | 0 | sim |  |
-| evolucao_filmes | 366 | 366 | sim |  |
-| filmes_ano | 39 | 39 | sim |  |
-| filtros_eventos | 1 | 1 | sim |  |
-| grupos_atividade | 108 | 108 | sim |  |
-| integridade | 1 | 1 | sim |  |
-| mensal | 267 | 267 | sim |  |
-| perfis_ativos | 28 | 28 | sim |  |
-| perfis_cumulativos | 39 | 39 | sim |  |
-| ponderado | 10 | 10 | sim |  |
-| qualidade | 1 | 1 | sim |  |
-| valores_ano | 195 | 195 | sim |  |
