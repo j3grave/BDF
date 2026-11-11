@@ -1,0 +1,25 @@
+analise,notas,min_utilizadores,min_desvio,real,media,desvio_padrao,p95,maximo,perm_ge_real,valor_p,z,sinal_bonferroni,razao_real_media
+principal,1,3,1.5,31,27.25,5.82,37.3,43,4,0.2381,0.64,False,1.14
+principal,1,3,2.0,17,14.15,3.67,19.25,24,2,0.1429,0.78,False,1.2
+principal,1,5,1.5,2,0.6,0.68,2.0,2,2,0.1429,2.06,False,3.33
+principal,1,5,2.0,2,0.35,0.59,1.05,2,1,0.0952,2.81,False,5.71
+principal,1,10,1.5,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1,10,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1,20,1.5,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1,20,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,5,3,1.5,56,45.8,5.96,53.25,58,1,0.0952,1.71,False,1.22
+principal,5,3,2.0,3,0.6,0.6,1.05,2,0,0.0476,4.01,False,5.0
+principal,5,5,1.5,1,1.4,1.05,3.0,3,16,0.8095,-0.38,False,0.71
+principal,5,5,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,5,10,1.5,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,5,10,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,5,20,1.5,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,5,20,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1 e 5,3,1.5,87,73.05,9.6,84.4,92,1,0.0952,1.45,False,1.19
+principal,1 e 5,3,2.0,20,14.75,3.84,20.25,25,2,0.1429,1.37,False,1.36
+principal,1 e 5,5,1.5,3,2.0,1.12,3.05,4,8,0.4286,0.89,False,1.5
+principal,1 e 5,5,2.0,2,0.35,0.59,1.05,2,1,0.0952,2.81,False,5.71
+principal,1 e 5,10,1.5,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1 e 5,10,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1 e 5,20,1.5,0,0.0,0.0,0.0,0,20,1.0,,False,
+principal,1 e 5,20,2.0,0,0.0,0.0,0.0,0,20,1.0,,False,
