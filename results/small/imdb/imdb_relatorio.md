@@ -147,7 +147,14 @@ Um filme entra num tipo se cada segmento desse tipo o avaliou pelo menos 5 vezes
 
 ## Desempenho
 
-Join MovieLens × IMDb (`00_filmes.sql`), mediana de 3 corridas: CSV/TSV.gz 1 927 ms, Parquet 92 ms (21,1 vezes mais rápido). O CSV/TSV inclui descomprimir o gzip e converter texto em números em cada corrida. Os tamanhos estão em `results/sizes.csv` (dataset `imdb`).
+| Tabela | TSV (MB) | TSV.gz (MB) | Parquet snappy (MB) | Parquet / TSV |
+|---|---:|---:|---:|---:|
+| title_ratings | 30,3 | 8,8 | 13,2 | 44% |
+| title_basics | 1 126,6 | 230,4 | 459,6 | 41% |
+
+O Parquet ocupa muito menos do que o TSV descomprimido. Comparado com o TSV.gz, o `title_basics` (quase só texto: títulos) pode até ficar maior, porque o gzip comprime o ficheiro inteiro. A vantagem do Parquet está na leitura: uma query lê só as colunas de que precisa (no join, só `tconst` e `titleType` das 9 colunas do `title_basics`), sem descomprimir nem converter o resto.
+
+Join MovieLens × IMDb (`00_filmes.sql`), mediana de 3 corridas: CSV/TSV.gz 1 927 ms, Parquet 79 ms (24,3 vezes mais rápido). O CSV/TSV inclui descomprimir o gzip e converter texto em números em cada corrida. Os tamanhos estão em `results/sizes.csv` (dataset `imdb`).
 
 ## Versões Athena emuladas no DuckDB
 
