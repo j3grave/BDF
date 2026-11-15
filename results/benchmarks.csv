@@ -99,3 +99,5 @@ run_at,dataset,query,formato,median_s,n_rows
 2026-11-09T18:40:52,small,04_top_filmes,parquet_by_year,0.0053,10
 2026-11-09T18:40:52,small,05_ratings_por_ano,parquet,0.0022,23
 2026-11-09T18:40:52,small,05_ratings_por_ano,parquet_by_year,0.0022,23
+2026-11-15T16:06:45,small,imdb_join,csv,1.9272,9724
+2026-11-15T16:06:45,small,imdb_join,parquet,0.0916,9724

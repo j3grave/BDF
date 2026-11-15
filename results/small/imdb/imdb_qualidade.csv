@@ -1,0 +1,7 @@
+tabela,coluna,linhas,nulos_\N,falhas_conversao
+title_ratings,averageRating,1732558,0,0
+title_ratings,numVotes,1732558,0,0
+title_basics,isAdult,12965577,0,0
+title_basics,startYear,12965577,1487435,0
+title_basics,endYear,12965577,12801064,0
+title_basics,runtimeMinutes,12965577,8051768,0
