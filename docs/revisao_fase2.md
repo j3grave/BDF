@@ -223,3 +223,42 @@ Por ordem, um commit por alteração. Nada disto foi feito.
 7. I2: apagar o `credentials` da pasta do projeto. É uma ação tua, fora do git.
 
 M2, M3, M5, M6, M7, M8 e M12 ficam registados, sem alteração proposta agora.
+
+## 5. Correções aplicadas (15/11/2026)
+
+Aprovadas no ponto de paragem 1. Um commit por alteração, no `fase2-cloud-pipeline`, sem push.
+
+| Ponto | Estado | Commit |
+|---|---|---|
+| I3, I4, I5, M11 (README) | Corrigido | `README: estrutura do repositório, passo analises, …` |
+| I6, M10 (`proximos_passos.md`) | Corrigido | `proximos_passos: estado a 15/11 …` |
+| I6 (resumo do projeto) | Corrigido | `Resumo do projeto: estado do git a 15/11 …` |
+| M9 (`.gitignore`) | Corrigido | `gitignore: dados/ e lab_resultados.zip …` |
+| M4 (esqueleto `sql/10_flag_bots.sql`) | Corrigido | `sql/10_flag_bots.sql: cabeçalho aponta …` |
+| M1 (desempate na query 04 do Athena) | Corrigido; ainda não corrido no Athena | `Athena: desempate por movieid …` |
+| I1 (`bdf_inventario.md`) | Por decidir | — |
+| I2 (`credentials` na pasta do projeto) | Ação do Tiago, fora do git | — |
+
+### Legibilidade do código
+
+Revisão pedida para que o código seja simples de ler por alunos do 1.º ano da pós-graduação e
+esteja comentado em português. Os comentários e as docstrings já estavam todos em português.
+Alterações:
+
+- `06_coordenacao.py`: o `main` (163 linhas) foi dividido em funções com nome
+  (`linha_de_base`, `teste_permutacao`, `rajadas_por_ano`, `detalhe_rajadas`, `top_rajadas`,
+  `escrever_relatorio`). Os `lambda` dentro do `agg` do pandas e o `**({...} if ... else {})`
+  passaram a passos explícitos. Todas as funções têm docstring.
+- `prepare_cloud.py`: o `main` (152 linhas) foi dividido numa função por etapa (cópia,
+  partição, CSV e três verificações).
+- `05_analises.py`, `athena_setup.py`, `athena_benchmark.py`, `athena_common.py` e
+  `cloud_pipeline.py`: regex explicadas; `next(...)` e compreensões com várias condições
+  substituídos por ciclos `for`; comentários sobre `**kwargs`, o polling do Athena e o callback do
+  upload.
+
+**Os resultados não mudaram.** Antes e depois das alterações corremos, no small e no 1M:
+- `05_analises.py --emular-athena` e `06_coordenacao.py --repeticoes 5`: todos os CSV são iguais,
+  com tolerância de 1e-9 nos floats, e os relatórios só diferem nos tempos;
+- `prepare_cloud.py`: os manifestos são iguais. No 1M, o tamanho de uma partição varia 0,01 MB, mas
+  isso também acontece entre corridas do código original, por causa da ordem de escrita;
+- `athena_setup.py --dry-run` e `athena_benchmark.py --dry-run`: o SQL enviado é igual.
