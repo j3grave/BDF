@@ -145,6 +145,7 @@ class Athena:
     """Cliente mínimo do Athena: submete uma query, espera pelo fim e devolve as estatísticas."""
 
     def __init__(self, aws, athena_client=None, s3_client=None):
+        """Guarda os clientes boto3 do Athena e do S3, o workgroup e a pasta dos resultados."""
         # Os clientes podem ser passados de fora (útil para testar sem AWS).
         if athena_client is None or s3_client is None:
             session = boto3_session(aws['region'])
@@ -157,7 +158,11 @@ class Athena:
         self.output = f"s3://{aws['bucket_resultados']}/athena-results/{aws['database']}/"
 
     def _call(self, funcao, **kwargs):
-        """Chama a API e traduz os erros de credenciais numa mensagem clara."""
+        """Chama a API e traduz os erros de credenciais numa mensagem clara.
+
+        **kwargs recebe os argumentos com nome (ex.: QueryExecutionId=...) e passa-os tal e qual
+        à função do boto3. Assim, todas as chamadas à AWS passam por este único try/except.
+        """
         try:
             return funcao(**kwargs)
         except Exception as erro:
@@ -176,8 +181,10 @@ class Athena:
                   'ResultConfiguration': {'OutputLocation': self.output}}
         if database:
             kwargs['QueryExecutionContext'] = {'Database': database}
+        # O Athena é assíncrono: start_query_execution só submete a query e devolve um id
         query_id = self._call(self.athena.start_query_execution, **kwargs)['QueryExecutionId']
 
+        # Perguntamos o estado de meio em meio segundo até a query terminar (ou passar o TIMEOUT)
         inicio = time.monotonic()
         while True:
             execucao = self._call(self.athena.get_query_execution, QueryExecutionId=query_id)['QueryExecution']

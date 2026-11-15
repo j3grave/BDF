@@ -96,7 +96,8 @@ def ensure_bucket(s3, bucket, region):
                      'Escolhe outro nome com --bucket-dados/--bucket-resultados.')
         if codigo not in ('404', 'NoSuchBucket'):
             raise
-    # Em us-east-1 a API não aceita LocationConstraint; nas outras regiões é obrigatório
+    # Em us-east-1 a API não aceita LocationConstraint; nas outras regiões é obrigatório.
+    # Montamos os argumentos num dicionário e passamo-los com ** (cada chave vira um argumento).
     kwargs = {'Bucket': bucket}
     if region != 'us-east-1':
         kwargs['CreateBucketConfiguration'] = {'LocationConstraint': region}
@@ -115,14 +116,25 @@ def remote_sizes(s3, bucket, prefix):
 
 
 class Progresso:
-    """Callback do upload_file: mostra a percentagem enviada na mesma linha do terminal."""
+    """Callback do upload_file: mostra a percentagem enviada na mesma linha do terminal.
+
+    O boto3 envia os ficheiros grandes em vários pedaços ao mesmo tempo e, depois de cada
+    pedaço, chama o callback com o n.º de bytes enviados. Usamos uma classe (e não uma função)
+    para guardar entre chamadas o total já enviado.
+    """
 
     def __init__(self, nome, total):
+        """Guarda o nome e o tamanho do ficheiro e começa a contagem em 0 bytes."""
         self.nome, self.total, self.enviado = nome, total, 0
-        self.ultimo = -1
-        self.lock = threading.Lock()   # o boto3 chama o callback a partir de várias threads
+        self.ultimo = -1   # última percentagem mostrada (para não repetir a mesma)
+        # Como os pedaços vão em paralelo (várias threads), o lock garante que duas chamadas
+        # não atualizam self.enviado ao mesmo tempo.
+        self.lock = threading.Lock()
 
     def __call__(self, n_bytes):
+        """Chamado pelo boto3 depois de cada pedaço: soma os bytes e mostra a percentagem."""
+        # __call__ permite usar o objeto como se fosse uma função: progresso(n_bytes)
+        # O "\r" volta ao início da linha, por isso a percentagem é reescrita no mesmo sítio.
         with self.lock:
             self.enviado += n_bytes
             pct = int(self.enviado * 100 / self.total) if self.total else 100
