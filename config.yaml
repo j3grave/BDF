@@ -20,3 +20,16 @@ aws:
   bucket_dados: null        # null = bdf26-g1-dados-<ID da conta>
   bucket_resultados: null   # null = bdf26-g1-resultados-<ID da conta>
   workgroup: primary
+
+# Fase 3 (passo imdb: python run_pipeline.py --dataset small --steps imdb).
+# Ficheiros do IMDb (https://datasets.imdbws.com/, uso pessoal e não comercial).
+# São os mesmos para os três datasets do MovieLens: ficam em data/imdb/{raw,parquet}.
+imdb:
+  url_base: https://datasets.imdbws.com/
+  min_avaliacoes_ml: 50       # só filmes com pelo menos 50 avaliações no MovieLens
+  min_votos_imdb: 1000        # e pelo menos 1000 votos no IMDb
+  tipos_titulo: [movie]       # tipos do IMDb (titleType) que entram nas análises; ficam de fora
+                              # séries, episódios, curtas, vídeos e filmes para TV
+  min_avaliacoes_segmento: 5  # P2: avaliações mínimas de um segmento num filme
+  n_quantis_popularidade: 5   # P1: grupos de popularidade (quintis do n.º de votos no IMDb)
+  corte_era: '2003-02-18'     # P2: data que separa as duas eras (início das meias estrelas)
