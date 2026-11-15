@@ -1,0 +1,8 @@
+tabela,coluna,linhas,nulos,pct_nulos,distintos_aprox
+ratings,userId,1000209,0,0.0,5921
+ratings,movieId,1000209,0,0.0,4196
+ratings,rating,1000209,0,0.0,5
+ratings,timestamp,1000209,0,0.0,498578
+movies,movieId,3883,0,0.0,4417
+movies,title,3883,0,0.0,4574
+movies,genres,3883,0,0.0,330

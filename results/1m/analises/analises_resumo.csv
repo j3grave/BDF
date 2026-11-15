@@ -1,0 +1,17 @@
+query,linhas,segundos,fonte
+10_flag_bots,6040,0.0529,parquet
+10_flag_bots_calibracao,1,0.0017,parquet
+anual,4,0.0076,parquet
+distribuicao,5,0.0058,parquet
+eventos,100,0.0818,parquet
+evolucao_filmes,0,0.0131,parquet
+filmes_ano,0,0.0151,parquet
+filtros_eventos,1,0.0849,parquet
+grupos_atividade,20,0.0093,parquet
+integridade,1,0.0036,parquet
+mensal,35,0.0129,parquet
+perfis_ativos,4,0.0086,parquet
+perfis_cumulativos,4,0.0142,parquet
+ponderado,10,0.0043,parquet
+qualidade,1,0.0167,parquet
+valores_ano,20,0.0051,parquet
