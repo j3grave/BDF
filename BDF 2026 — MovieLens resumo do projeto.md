@@ -558,16 +558,17 @@ Vai ser feito no branch `fase2-cloud-pipeline` e testado só com o small. Os buc
 
 ## Estado do git e pendentes
 
-Nenhum dos três branches de trabalho está no `main`: o `integracao-queries-luis` contém tudo (30 commits à frente de `origin/main`, 0 atrás) e está sincronizado com o GitHub.
+Estado a 15/11/2026. O `fase2-cloud-pipeline` contém todo o trabalho (fases 1 e 2, queries do Luís, deteção de bots e passo `cloud`) e foi revisto em `docs/revisao_fase2.md`. Segue para o `main` por Pull Request.
 
-| Branch | Último commit | Conteúdo | Integrado no `main`? |
-| --- | --- | --- | --- |
-| `integracao-queries-luis` | `cbd7cb1` | Tudo: fases 1 e 2, notebook do Luís, blocos 1–6 | Não |
-| `fase2-cloud-prep` | `2b54c11` | Fase 1 + preparação cloud | Não (contido no anterior) |
-| `fase1-pipeline` | `604c14a` | Pipeline local, EDA, revisão didática | Não (contido nos anteriores) |
-| `origin/main` | `e51d050` | Notebook inicial com novas questões (Luís) | — |
+| Branch | Conteúdo | Contido no `fase2-cloud-pipeline`? |
+| --- | --- | --- |
+| `fase2-cloud-pipeline` | Tudo: fases 1 e 2, notebook do Luís, blocos 1–6, passo `cloud` | — |
+| `integracao-queries-luis` | Fase 1, fase 2 (preparação), notebook do Luís, blocos 1–6 | Quase: faltam o `bdf_inventario.md` e uma cópia igual deste resumo |
+| `fase2-cloud-prep` | Fase 1 + preparação cloud | Sim |
+| `fase1-pipeline` | Pipeline local, EDA, revisão didática | Sim |
+| `origin/main` | Notebook inicial com novas questões (Luís) | Sim |
 
-O `main` local está divergente do `origin/main` (4 commits antigos só locais, 6 só no remoto) e precisa de ser alinhado antes de qualquer merge.
+O `main` local está alinhado com o `origin/main`.
 
 **Validação pelo Luís**
 
@@ -578,7 +579,7 @@ O `main` local está divergente do `origin/main` (4 commits antigos só locais, 
 
 **Execução no 32M**
 
-- [ ] Registar o `ingest` e o `parquet` do 32M neste repositório (`run_pipeline.py --dataset 32m --steps ingest parquet`): correram noutra cópia e faltam no `sizes.csv`
+- [x] Registar o `ingest` e o `parquet` do 32M neste repositório (`run_pipeline.py --dataset 32m --steps ingest parquet`)
 - [ ] `python scripts/05_analises.py --dataset 32m --emular-athena`, depois de decidir onde gravar o `10_flag_bots.csv` (200 948 linhas)
 - [ ] Calibrar a regra A no 32M (p99, p99,5, p99,9)
 
@@ -586,18 +587,18 @@ O `main` local está divergente do `origin/main` (4 commits antigos só locais, 
 
 - [x] Criar os buckets e fazer o upload de `data/cloud/` (small e 32M)
 - [x] Correr `athena_setup.py` e `athena_benchmark.py` para medir tempos, MB lidos e custo (small e 32M)
-- [ ] Commit do `results/cloud_benchmarks.csv` e dos manifestos, sem o `config.yaml` (os nomes dos buckets são pessoais)
-- [ ] Passo `cloud` no `run_pipeline.py`, buckets derivados da conta e README do Learner Lab (branch `fase2-cloud-pipeline`, teste só no small)
+- [x] Commit do `results/cloud_benchmarks.csv` e dos manifestos, sem o `config.yaml` (os nomes dos buckets são pessoais)
+- [x] Passo `cloud` no `run_pipeline.py`, buckets derivados da conta e README do Learner Lab (branch `fase2-cloud-pipeline`, teste só no small)
 - [ ] Criar `scripts/athena_analises.py` para correr `sql/athena/analise/` e comparar com os resultados locais
 - [ ] Confirmar no Athena a janela `RANGE … 599 FOLLOWING`, `approx_percentile` e o CTAS do `flag_bots`
 
 **Outros**
 
-- [ ] Alinhar o `main` local e abrir o Pull Request de `integracao-queries-luis` para `main`
-- [ ] Atualizar o README (passo `analises`, `06_coordenacao.py`, estrutura do repositório)
-- [ ] Decidir se `sql/athena/queries/04_top_filmes.sql` acompanha o desempate por `movieId`
+- [ ] Abrir o Pull Request de `fase2-cloud-pipeline` para `main` (o `main` local já está alinhado)
+- [x] Atualizar o README (passo `analises`, `06_coordenacao.py`, estrutura do repositório)
+- [x] `sql/athena/queries/04_top_filmes.sql` acompanha o desempate por `movieId`
 - [ ] Figuras para o `05_analises.py` (implica mover o estilo NOVA para um módulo partilhado)
-- [ ] Acrescentar `dados/` e `lab_resultados.zip` ao `.gitignore`
+- [x] Acrescentar `dados/` e `lab_resultados.zip` ao `.gitignore`
 
 ## Anexo — SQL completo das queries longas (DuckDB)
 
