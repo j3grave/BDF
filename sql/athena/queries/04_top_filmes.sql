@@ -3,6 +3,8 @@
 --
 -- Diferença para o DuckDB: JOIN ... ON em vez de USING, para poder usar m.movieid
 -- qualificado no GROUP BY sem ambiguidade.
+-- Em caso de empate na média, o movieid decide a ordem, como na versão DuckDB, para o
+-- resultado ser sempre o mesmo (determinístico) nos dois motores.
 --
 -- Parâmetros: ${ratings}, ${movies}
 SELECT m.title, ROUND(AVG(r.rating), 2) AS avg_rating, COUNT(*) AS num_ratings
@@ -10,5 +12,5 @@ FROM ${ratings} AS r
 JOIN ${movies} AS m ON r.movieid = m.movieid
 GROUP BY m.movieid, m.title
 HAVING COUNT(*) >= 100
-ORDER BY AVG(r.rating) DESC
+ORDER BY AVG(r.rating) DESC, m.movieid
 LIMIT 10
