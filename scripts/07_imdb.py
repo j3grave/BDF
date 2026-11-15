@@ -107,6 +107,9 @@ def parse_args():
 def parametros_imdb(cfg):
     """Lê a secção imdb do config.yaml e calcula o corte da era em segundos (UTC)."""
     imdb = cfg.get('imdb') or {}
+    # Tipos de título do IMDb que entram nas análises, escritos como lista SQL: ('movie')
+    tipos = imdb.get('tipos_titulo') or ['movie']
+    tipos_sql = '(' + ', '.join("'" + str(tipo).replace("'", "''") + "'" for tipo in tipos) + ')'
     corte = datetime.strptime(str(imdb.get('corte_era', '2003-02-18')), '%Y-%m-%d').replace(tzinfo=timezone.utc)
     return {
         'url_base': imdb.get('url_base', 'https://datasets.imdbws.com/'),
@@ -114,6 +117,8 @@ def parametros_imdb(cfg):
         'min_imdb': int(imdb.get('min_votos_imdb', 1000)),
         'min_seg': int(imdb.get('min_avaliacoes_segmento', 5)),
         'n_quantis': int(imdb.get('n_quantis_popularidade', 5)),
+        'tipos': [str(tipo) for tipo in tipos],
+        'tipos_sql': tipos_sql,
         'corte_era': int(corte.timestamp()),          # 2003-02-18 -> 1045526400
         'corte_era_txt': corte.strftime('%d/%m/%Y'),
     }
@@ -273,7 +278,7 @@ def fontes(p, ratings='ratings_ml', movies='movies_ml', links='links_ml',
         'imdb_ratings': imdb_ratings, 'imdb_basics': imdb_basics,
         'filmes': 'filmes', 'flag_bots': 'flag_bots',
         'min_ml': p['min_ml'], 'min_imdb': p['min_imdb'], 'min_seg': p['min_seg'],
-        'n_quantis': p['n_quantis'], 'corte_era': p['corte_era'],
+        'n_quantis': p['n_quantis'], 'corte_era': p['corte_era'], 'tipos': p['tipos_sql'],
     }
 
 
@@ -435,7 +440,7 @@ def fig_dispersao(con, p, pasta, ds, figuras, conc):
     """Figura 1: nota no MovieLens (x2) contra nota no IMDb, um ponto por filme."""
     df = con.execute(f"""SELECT nota_ml_10, nota_imdb FROM filmes
                          WHERE nota_imdb IS NOT NULL AND n_ml >= {p['min_ml']}
-                           AND votos_imdb >= {p['min_imdb']}""").df()
+                           AND votos_imdb >= {p['min_imdb']} AND tipo_imdb IN {p['tipos_sql']}""").df()
     fig, ax = plt.subplots(figsize=(7, 6.5))
     ax.scatter(df.nota_ml_10, df.nota_imdb, s=8, alpha=0.35, color=NOVA['verde_escuro'], edgecolor='none')
     ax.plot([1, 10], [1, 10], color=NOVA['cinza_medio'], linestyle='--', linewidth=1, label='notas iguais (y = x)')
@@ -588,12 +593,14 @@ def escrever_relatorio(saida, ds, p, sens, bench, figuras, comparacao, segundos)
          f"- **Limiares (config.yaml):** pelo menos {p['min_ml']} avaliações no MovieLens e {p['min_imdb']} votos "
          'no IMDb. Com poucas avaliações a média é instável. A secção "Sensibilidade" repete a análise sem e com '
          'outros limiares.',
-         '- **Tipo de título:** não se filtra pelo `titleType` do IMDb (ver a tabela da ligação).',
+         f"- **Tipo de título:** só entram nas análises os títulos do tipo {', '.join(p['tipos'])} "
+         '(`titleType` do IMDb; `imdb.tipos_titulo` no config.yaml). Séries, episódios, curtas, vídeos e '
+         'filmes para TV ficam de fora (categoria 5 da ligação).',
          '- **IC 95%:** média ± 1,96 × desvio-padrão / √n. **Spearman:** Pearson sobre as posições, com a '
          'posição média nos empates.', '',
          '## Ligação entre as fontes', '',
          f'{eda.num(ligados)} de {eda.num(total)} filmes avaliados no MovieLens ({eda.num(100 * ligados / total, 1)}%) '
-         'ligam a um título do IMDb com nota.', '',
+         f"ligam a um título do IMDb com nota e do tipo {', '.join(p['tipos'])}, e entram nas análises.", '',
          tabela_md(lig, ['categoria', 'filmes', 'pct_filmes', 'avaliacoes_ml', 'pct_avaliacoes_ml'], 1), '',
          'Porquê: a categoria 2 são ids que já não existem no `title.basics` (o IMDb remove ou funde títulos e o '
          'ficheiro público não diz qual); a 3 são títulos sem votos no `title.ratings`.', '',
@@ -684,7 +691,7 @@ def main():
     saida = ROOT / 'results' / ds / 'imdb'
     saida.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
-    print(f'[imdb] dataset={ds} limiares: ML >= {p["min_ml"]}, IMDb >= {p["min_imdb"]}')
+    print(f'[imdb] dataset={ds} limiares: ML >= {p["min_ml"]}, IMDb >= {p["min_imdb"]}; tipos: {p["tipos_sql"]}')
 
     # 1 e 2. IMDb: download e Parquet (iguais para todos os datasets do MovieLens)
     for ficheiro in FICHEIROS_IMDB.values():
