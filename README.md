@@ -39,6 +39,9 @@ O projeto explora ferramentas modernas de análise de dados local — formato **
 | `tags.csv` | Etiquetas livres atribuídas pelos utilizadores |
 | `links.csv` | Identificadores IMDb e TMDb de cada filme |
 
+Na fase 3 junta-se o **IMDb** (`title.ratings` e `title.basics`), como dataset complementar:
+ver [Fase 3: IMDb](#fase-3-imdb-como-dataset-complementar).
+
 O pipeline em scripts funciona também com o **MovieLens 1M** (1 000 209 avaliações, formato
 `.dat`) e o **MovieLens 32M** (32 milhões de avaliações): ver [Pipeline local](#pipeline-local).
 
@@ -158,8 +161,9 @@ python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
 ```
 
 Os passos são `ingest`, `parquet`, `benchmark`, `eda` e `analises`. Sem `--dataset` usa-se o valor de `config.yaml`.
-Há ainda o passo `cloud` (fase 2, usa a AWS), que só corre quando é pedido: ver
-[Fase cloud](#fase-cloud-aws-academy-learner-lab).
+Há ainda dois passos que só correm quando são pedidos: `cloud` (fase 2, usa a AWS; ver
+[Fase cloud](#fase-cloud-aws-academy-learner-lab)) e `imdb` (fase 3; ver
+[Fase 3: IMDb](#fase-3-imdb-como-dataset-complementar)).
 Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_to_parquet.py --dataset 1m`.
 
 | Passo | Script | O que faz |
@@ -188,6 +192,8 @@ BDF/
 │   ├── 04_eda.py
 │   ├── 05_analises.py          # análises do Luís e deteção de bots (passo analises)
 │   ├── 06_coordenacao.py       # coordenação entre contas (corre à mão, fora do pipeline)
+│   ├── 07_imdb.py              # fase 3: IMDb vs MovieLens (passo imdb, só a pedido)
+│   ├── prepare_cloud_imdb.py   # fase 3: IMDb para o S3 (data/cloud/imdb/)
 │   ├── cloud_pipeline.py       # fase 2: passo cloud (upload, catálogo e benchmark num só comando)
 │   ├── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
 │   ├── athena_common.py        # fase 2: opções AWS e cliente mínimo do Athena
@@ -198,13 +204,17 @@ BDF/
 │   ├── athena/ddl/             # fase 2: CREATE TABLE para o Athena
 │   ├── athena/queries/         # fase 2: queries 01–06 no dialeto do Athena (Trino)
 │   ├── athena/analise/         # as 16 queries de sql/analise/ no dialeto do Athena
-│   └── cloud/                  # fase 2: queries extra no dialeto DuckDB (06)
+│   ├── imdb/                   # fase 3: queries do IMDb (DuckDB)
+│   ├── athena/imdb/            # fase 3: as mesmas queries no dialeto do Athena
+│   └── cloud/                  # fase 2 e 3: queries extra do benchmark no dialeto DuckDB (06 e 07)
 ├── docs/                       # validação das queries do Luís e revisão da fase 2
 ├── data/<dataset>/             # não versionado; pode ser um symlink (ver abaixo)
 │   ├── raw/                    # zip e ficheiros originais
 │   ├── csv/                    # CSV normalizados
 │   └── parquet/                # <tabela>.parquet e ratings_by_year/year=AAAA/
+├── data/imdb/{raw,parquet}/   # não versionado: IMDb (fase 3), o mesmo para todos os datasets
 ├── data/cloud/<pasta>/         # não versionado: espelho do que vai para o S3
+├── data/cloud/imdb/           # não versionado: IMDb para o S3 (fase 3)
 ├── reports/                    # versionado: cloud_manifest_<dataset>.md
 └── results/                    # versionado (resultados leves: CSV, PNG, .md)
     ├── sizes.csv               # tamanhos CSV vs Parquet vs Parquet por ano, e tempo de cada conversão
@@ -213,7 +223,8 @@ BDF/
     ├── cloud_benchmarks.csv    # fase 2: DuckDB vs Athena (tempo, MB lidos, n.º de linhas)
     ├── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
     ├── <dataset>/analises/     # um CSV por query, analises_relatorio.md e athena_emulado/
-    └── <dataset>/bots_coordenacao/   # resultados do 06_coordenacao.py
+    ├── <dataset>/bots_coordenacao/   # resultados do 06_coordenacao.py
+    └── <dataset>/imdb/         # fase 3: CSV, figuras e imdb_relatorio.md
 ```
 
 O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
@@ -278,6 +289,57 @@ Conclusão atual, a validar:
 - **32M:** há mais rajadas do que na linha de base, mas o excesso está todo antes da escala de
   meias estrelas (fevereiro de 2003) e explica-se pela mudança de escala, não por coordenação.
   Com 200 permutações, nenhuma comparação pode passar a correção de Bonferroni.
+
+## Fase 3: IMDb como dataset complementar
+
+Mostra que o pipeline se adapta a um dataset complementar e responde a duas perguntas:
+
+- **P1.** As notas do MovieLens e do IMDb concordam? Onde e quanto divergem?
+- **P2.** Que diferenças há entre os tipos de utilizadores?
+
+```bash
+python run_pipeline.py --dataset small --steps imdb      # ou: python scripts/07_imdb.py --dataset small
+python scripts/07_imdb.py --dataset small --emular-athena  # testar também as versões Athena
+```
+
+O passo `imdb` só corre quando é pedido, como o `cloud`. Na primeira vez descarrega cerca de
+240 MB do IMDb. Precisa do `links.csv`, que tem o `imdbId` de cada filme, por isso **não corre com
+o 1M**: só com o small e o 32M, depois dos passos `ingest` e `parquet`.
+
+**Fontes e licença.** `title.ratings.tsv.gz` (nota média e n.º de votos de cada título) e
+`title.basics.tsv.gz` (tipo, ano e géneros), de <https://datasets.imdbws.com/>. Os dados do IMDb
+são disponibilizados apenas para **uso pessoal e não comercial**, nas condições descritas em
+<https://developer.imdb.com/non-commercial-datasets/>. Não são versionados: ficam em
+`data/imdb/raw/` (TSV.gz) e `data/imdb/parquet/` e são os mesmos para os três datasets do MovieLens.
+
+| Etapa | O que faz |
+|---|---|
+| Download e Parquet | `\N` passa a nulo, tipos numéricos e géneros em lista. Só converte se o Parquet não existir ou for mais antigo. Tamanhos em `results/sizes.csv` (dataset `imdb`, com o TSV descomprimido, o TSV.gz e o Parquet). |
+| Ligação | `tconst = 'tt' + imdbId`, com zeros à esquerda até 7 algarismos. O `lpad` só se aplica aos ids com menos de 7 algarismos, porque o `lpad` do DuckDB e do Trino corta os ids de 8 algarismos (7 067 filmes no 32M). Não se filtra pelo tipo de título. |
+| Escala | Nota do MovieLens × 2 (0,5–5 → 1–10, os extremos do IMDb). É linear: não muda a ordem nem as correlações. Gap = IMDb − MovieLens×2. |
+| P1 | Gap médio com IC 95%, Pearson e Spearman; gap por género, por década e por popularidade (quintis de votos); os 10 filmes mais divergentes em cada sentido; sensibilidade aos limiares. |
+| P2 | Segmentos de utilizadores do MovieLens (atividade, era de registo, bots) comparados com o IMDb sobre o mesmo conjunto de filmes. |
+| Desempenho | Join MovieLens × IMDb em CSV/TSV.gz e em Parquet, mediana de 3 corridas, em `results/benchmarks.csv` (`imdb_join`). |
+
+Os limiares estão na secção `imdb` do `config.yaml`: pelo menos 50 avaliações no MovieLens e 1000
+votos no IMDb. As queries estão em `sql/imdb/` (DuckDB) e `sql/athena/imdb/` (Athena). Os
+resultados ficam em `results/<dataset>/imdb/`: um CSV por query, `sensibilidade.csv`,
+`imdb_qualidade.csv`, quatro figuras e o `imdb_relatorio.md`.
+
+**Na cloud.** Se o IMDb existir, o passo `cloud` prepara `data/cloud/imdb/`
+(`scripts/prepare_cloud_imdb.py`), envia-o para `s3://<bucket-dados>/imdb/`, cria as tabelas
+`imdb_title_ratings`, `imdb_title_basics` e as versões `_tsv` (DDL `08` a `11`) e junta ao
+benchmark a query `07_imdb_join`, que compara os MB lidos em TSV.gz e em Parquet.
+
+**Limitações.**
+
+- O IMDb só publica agregados por filme, sem dados por utilizador. A P2 não compara utilizadores
+  dos dois sites: compara a concordância de cada segmento de utilizadores do MovieLens com a nota
+  agregada do IMDb.
+- Os votos do IMDb são de outra população e de outra época (o ficheiro é atualizado todos os
+  dias), e o IMDb não publica como calcula a nota.
+- O segmento de bots é **provisório** (regras ainda a validar pelo Luís) e, no small, tem só
+  2 utilizadores sinalizados, poucos demais para haver filmes comuns.
 
 ## Fase cloud (AWS Academy Learner Lab)
 
