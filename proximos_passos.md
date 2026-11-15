@@ -1,6 +1,6 @@
 # BDF 2026 — MovieLens: próximos passos
 
-Estado em 08/11/2026. O pipeline local e a fase cloud correm cada um com um só comando e estão testados no small e no 32M. Falta integrar o trabalho no `main`, fechar a validação com o Luís, completar o 32M e preparar as entregas.
+Estado em 15/11/2026. O pipeline local e a fase cloud correm cada um com um só comando e estão testados no small e no 32M. O branch `fase2-cloud-pipeline` foi revisto (`docs/revisao_fase2.md`). Falta integrá-lo no `main`, fechar a validação com o Luís, correr as análises no 32M e preparar as entregas.
 
 | Prioridade | Bloco | Responsável | Estado |
 | --- | --- | --- | --- |
@@ -16,14 +16,14 @@ Estado em 08/11/2026. O pipeline local e a fase cloud correm cada um com um só 
 
 O `main` só tem o notebook inicial. O branch `fase2-cloud-pipeline` contém todo o trabalho (fases 1 e 2, queries do Luís, deteção de bots, passo `cloud`), por isso basta um Pull Request.
 
-- [ ] **Desfazer as alterações dos testes** e confirmar que a árvore de trabalho fica limpa:
+- [x] **Desfazer as alterações dos testes** e confirmar que a árvore de trabalho fica limpa:
   ```bash
   git restore results/ reports/
   git status
   ```
-- [ ] **Teste do clone limpo**, como se fosse um colega:
+- [x] **Teste do clone limpo**, como se fosse um colega (15/11/2026: os 5 passos sem erros; o passo `cloud` não foi corrido):
   ```bash
-  git clone --branch fase2-cloud-pipeline "/Users/tiagovacasflgueira/Desktop/Nova IMS 2 Semestre/Enterprise Data Science Bootcamp/edsb-class06-class07/BDF" /tmp/bdf_teste
+  git clone --branch fase2-cloud-pipeline https://github.com/j3grave/BDF.git /tmp/bdf_teste
   cd /tmp/bdf_teste
   python3.13 -m venv .venv
   source .venv/bin/activate
@@ -32,18 +32,18 @@ O `main` só tem o notebook inicial. O branch `fase2-cloud-pipeline` contém tod
   python run_pipeline.py --dataset small --steps cloud
   ```
   Critério: termina com "concluído", a validação dá `OK` e o benchmark não tem avisos.
-- [ ] **Confirmar que nenhum commit tem co-autoria** antes do push:
+- [x] **Confirmar que nenhum commit tem co-autoria** antes do push:
   ```bash
   git --no-pager log --format='%h %s%n%b' origin/main..fase2-cloud-pipeline | grep -i claude
   ```
   Critério: não devolve nada.
-- [ ] **Push do branch:**
+- [x] **Push do branch:**
   ```bash
   git push -u origin fase2-cloud-pipeline
   ```
-- [ ] **Alinhar o `main` local com o `origin/main`.** Estão divergentes: 4 commits antigos só locais e 6 só no GitHub. Os 4 locais são uploads antigos do GitHub Desktop e podem ser descartados.
+- [x] **Alinhar o `main` local com o `origin/main`.** Já estão alinhados (`e51d050`).
 - [ ] **Abrir um Pull Request** de `fase2-cloud-pipeline` para `main` no GitHub, com pelo menos um colega como revisor.
-- [ ] **Merge** depois da revisão. Os branches `fase1-pipeline`, `fase2-cloud-prep` e `integracao-queries-luis` ficam contidos e podem ser arquivados.
+- [ ] **Merge** depois da revisão. Os branches `fase1-pipeline` e `fase2-cloud-prep` ficam contidos. O `integracao-queries-luis` tem 2 commits que não estão no `fase2-cloud-pipeline` (o `bdf_inventario.md` e uma cópia igual do resumo): decidir antes de o arquivar.
 
 ---
 
@@ -68,7 +68,7 @@ Sem esta validação, a deteção de bots não pode entrar no relatório como re
 
 É a evidência de escala, o ponto que mais conta na avaliação.
 
-- [ ] **Registar o `ingest` e o `parquet` do 32M neste repositório.** Correram noutra cópia e faltam no `results/sizes.csv`, incluindo o tempo de conversão:
+- [x] **Registar o `ingest` e o `parquet` do 32M neste repositório** (feito no `650fc3b`: 218 MB e 29 partições no `results/sizes.csv`):
   ```bash
   python run_pipeline.py --dataset 32m --steps ingest parquet
   ```
@@ -92,7 +92,7 @@ Sem esta validação, a deteção de bots não pode entrar no relatório como re
   - DuckDB local vs Athena: a esta escala o portátil é mais rápido; a vantagem do Athena é escalar sem infraestrutura e cobrar só os dados lidos;
   - a deteção de bots: 0,33% de suspeitos no small e 0,10% no 1M, contra 34% e 47% da regra original;
   - uma demonstração ao vivo no query editor do Athena. Atenção a não mostrar o ID da conta nos nomes dos buckets.
-- [ ] **README:**
+- [x] **README:**
   - acrescentar o passo `analises` à lista de passos;
   - documentar o `06_coordenacao.py` (corre à mão, fora do pipeline);
   - atualizar a secção "Estrutura do repositório", que ainda só descreve o notebook.
@@ -105,8 +105,8 @@ Só se houver tempo depois dos pontos 1 a 4.
 
 - [ ] `scripts/athena_analises.py`, para correr as 16 análises de `sql/athena/analise/` no Athena. Hoje só foram testadas em emulação no DuckDB.
 - [ ] Figuras para o `05_analises.py`, movendo o estilo NOVA IMS do `04_eda.py` para um módulo partilhado.
-- [ ] Desempate por `movieId` em `sql/athena/queries/04_top_filmes.sql`, igual à versão DuckDB.
-- [ ] Acrescentar `dados/` e `lab_resultados.zip` ao `.gitignore`.
+- [x] Desempate por `movieId` em `sql/athena/queries/04_top_filmes.sql`, igual à versão DuckDB.
+- [x] Acrescentar `dados/` e `lab_resultados.zip` ao `.gitignore`.
 - [ ] Upload do passo `cloud` com comparação por checksum (ETag), além do tamanho.
 
 ---
