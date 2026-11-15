@@ -42,8 +42,6 @@ from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config, now, si
 # Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
 ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
 
-
-
 def parse_args():
     """Lê a opção --dataset (small | 1m | 32m; por omissão, o do config.yaml, como nos outros passos)."""
     parser = argparse.ArgumentParser(description=__doc__,
@@ -105,6 +103,7 @@ def check_structure(cloud_dir, tables):
             problemas.append(f'{table}/ devia ter só {table}.parquet e tem: {ficheiros}')
 
     # ratings_part: só pastas year=AAAA, cada uma só com ficheiros .parquet
+    # (item.name[5:] é o que vem depois de "year=", ex.: "2015", e tem de ser só algarismos)
     for item in (cloud_dir / 'ratings_part').iterdir():
         if not (item.is_dir() and item.name.startswith('year=') and item.name[5:].isdigit()):
             problemas.append(f'item inesperado em ratings_part/: {item.name}')
@@ -226,6 +225,144 @@ def write_manifest(path, info):
     path.write_text('\n'.join(L).rstrip() + '\n')
 
 
+def copiar_tabelas(con, tables, pq_dir, cloud_dir):
+    """Passo 1: uma pasta por tabela, com um ficheiro Parquet zstd. SELECT * sem casts mantém os tipos."""
+    for table in tables:
+        src = pq_dir / f'{table}.parquet'
+        dst = cloud_dir / table / f'{table}.parquet'
+        dst.parent.mkdir()
+        t0 = time.perf_counter()
+        con.execute(f"""
+            COPY (SELECT * FROM read_parquet('{src.as_posix()}'))
+            TO '{dst.as_posix()}' (FORMAT parquet, COMPRESSION zstd)
+        """)
+        print(f'  {table:12} {mb(src):>8.2f} MB (fase 1) -> {mb(dst):>8.2f} MB zstd em {time.perf_counter() - t0:.2f} s')
+
+
+def particionar_ratings(con, pq_dir, part_dir):
+    """Passo 2: ratings particionado por ano.
+
+    Com PARTITION_BY, o DuckDB não escreve a coluna year dentro dos ficheiros: o valor fica
+    só no nome da pasta (year=2015/). É assim que o Athena espera as partições.
+    """
+    t0 = time.perf_counter()
+    con.execute(f"""
+        COPY (SELECT *, year(to_timestamp("timestamp")) AS year
+              FROM read_parquet('{(pq_dir / 'ratings.parquet').as_posix()}'))
+        TO '{part_dir.as_posix()}' (FORMAT parquet, PARTITION_BY (year), COMPRESSION zstd)
+    """)
+    n_part = len(list(part_dir.glob('year=*')))
+    print(f'  {"ratings_part":12} {mb(part_dir):>8.2f} MB zstd em {n_part} partições, {time.perf_counter() - t0:.2f} s')
+
+
+def copiar_csv(csv_file, cloud_dir):
+    """Passo 3: cópia do CSV, byte a byte (no 1M é o CSV normalizado, porque o original vem em .dat)."""
+    (cloud_dir / 'ratings_csv').mkdir()
+    csv_dst = cloud_dir / 'ratings_csv' / 'ratings.csv'
+    shutil.copyfile(csv_file, csv_dst)
+    print(f'  {"ratings_csv":12} {mb(csv_dst):>8.2f} MB (cópia do CSV)')
+    return csv_dst
+
+
+def verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas):
+    """Verifica cada tabela simples contra a origem (linhas, schema e compressão).
+
+    Acrescenta os problemas encontrados à lista problemas e devolve (info_tabelas, info_comp),
+    com os dados de cada tabela para o manifesto.
+    """
+    info_tabelas, info_comp = [], []
+    for table in tables:
+        src = (pq_dir / f'{table}.parquet').as_posix()
+        dst_dir = cloud_dir / table
+        dst = (dst_dir / '*.parquet').as_posix()
+
+        # Mesmo n.º de linhas e mesmo schema que o Parquet da fase 1; compressão zstd
+        n_src, n_dst = count_of(con, src), count_of(con, dst)
+        if n_src != n_dst:
+            problemas.append(f'{table}: {n_dst} linhas em data/cloud, {n_src} na origem')
+        sch_src, sch_dst = schema_of(con, src), schema_of(con, dst)
+        if sch_src != sch_dst:
+            problemas.append(f'{table}: schema diferente da origem: {sch_dst} vs {sch_src}')
+        comp = compression_of(con, dst)
+        if comp != 'ZSTD':
+            problemas.append(f'{table}: compressão {comp}, esperada ZSTD')
+
+        info_tabelas.append({'nome': table, 'caminho': f'{table}/', 'ficheiros': len(list(dst_dir.iterdir())),
+                             'mb': mb(dst_dir), 'linhas': n_dst, 'compressao': comp, 'schema': sch_dst})
+        info_comp.append({'nome': table, 'origem': f'data/{ds}/parquet/{table}.parquet',
+                          'comp_origem': compression_of(con, src), 'mb_origem': mb(pq_dir / f'{table}.parquet'),
+                          'mb_cloud': mb(dst_dir)})
+    return info_tabelas, info_comp
+
+
+def verificar_particoes(con, ds, part_dir, fase1_part, n_ratings, schema_ratings, problemas):
+    """Verifica ratings_part: soma das partições, year fora dos ficheiros, schema, compressão e
+    contagens por ano iguais às do ratings_by_year da fase 1.
+
+    Devolve (particoes, info_tabela, info_comp): a lista das partições e os dados para o manifesto.
+    """
+    part_glob = (part_dir / '*' / '*.parquet').as_posix()
+
+    # A soma das partições tem de dar o total de ratings
+    n_part_total = count_of(con, part_glob, hive=True)
+    if n_part_total != n_ratings:
+        problemas.append(f'ratings_part: {n_part_total} linhas na soma das partições, {n_ratings} em ratings')
+
+    # Sem hive_partitioning vemos só o que está dentro dos ficheiros: year não pode lá estar
+    sch_part = schema_of(con, part_glob, hive=False)
+    nomes_colunas = [coluna.lower() for coluna, _ in sch_part]
+    if 'year' in nomes_colunas:
+        problemas.append('ratings_part: a coluna year está repetida dentro dos ficheiros')
+    if sch_part != schema_ratings:
+        problemas.append(f'ratings_part: schema diferente de ratings: {sch_part}')
+    comp_part = compression_of(con, part_glob)
+    if comp_part != 'ZSTD':
+        problemas.append(f'ratings_part: compressão {comp_part}, esperada ZSTD')
+
+    # Contagens por ano iguais às da fase 1 (anos que faltem num dos lados contam como 0)
+    por_ano = counts_by_year(con, part_glob)
+    por_ano_fase1 = counts_by_year(con, (fase1_part / '*' / '*.parquet').as_posix())
+    for ano in sorted(set(por_ano) | set(por_ano_fase1)):
+        if por_ano.get(ano, 0) != por_ano_fase1.get(ano, 0):
+            problemas.append(f'ratings_part: ano {ano} com {por_ano.get(ano, 0)} linhas, '
+                             f'{por_ano_fase1.get(ano, 0)} no ratings_by_year da fase 1')
+
+    # Uma linha por partição, para a tabela do manifesto
+    particoes = []
+    for ano in sorted(por_ano):
+        d = part_dir / f'year={ano}'
+        particoes.append({'ano': ano, 'linhas': por_ano[ano], 'mb': mb(d), 'ficheiros': len(list(d.iterdir()))})
+    total_ficheiros = 0
+    for p in particoes:
+        total_ficheiros += p['ficheiros']
+
+    info_tabela = {'nome': 'ratings_part', 'caminho': 'ratings_part/year=AAAA/',
+                   'ficheiros': total_ficheiros, 'mb': mb(part_dir),
+                   'linhas': n_part_total, 'compressao': comp_part, 'schema': sch_part}
+    info_comp = {'nome': 'ratings_part', 'origem': f'data/{ds}/parquet/ratings_by_year/',
+                 'comp_origem': compression_of(con, (fase1_part / '*' / '*.parquet').as_posix()),
+                 'mb_origem': mb(fase1_part), 'mb_cloud': mb(part_dir)}
+    return particoes, info_tabela, info_comp
+
+
+def verificar_csv(con, csv_file, csv_dst, n_ratings, problemas):
+    """Verifica ratings_csv (mesmo tamanho que a origem e mesmo n.º de linhas que ratings).
+
+    Devolve os dados da tabela para o manifesto.
+    """
+    if csv_dst.stat().st_size != csv_file.stat().st_size:
+        problemas.append('ratings_csv: tamanho diferente do CSV de origem')
+    # Mesmas opções de leitura que o 02_to_parquet.py usa para o CSV
+    n_csv = con.execute(f"""
+        SELECT count(*) FROM read_csv('{csv_dst.as_posix()}', header=true, delim=',', quote='"', escape='"',
+                                      columns={duckdb_columns(SCHEMAS['ratings'])})
+    """).fetchone()[0]
+    if n_csv != n_ratings:
+        problemas.append(f'ratings_csv: {n_csv} linhas, {n_ratings} em ratings')
+    return {'nome': 'ratings_csv', 'caminho': 'ratings_csv/', 'ficheiros': 1, 'mb': mb(csv_dst),
+            'linhas': n_csv, 'compressao': 'nenhuma (CSV)', 'schema': list(SCHEMAS['ratings'].items())}
+
+
 def main():
     """Escreve data/cloud/<pasta>/, verifica tudo e, se estiver tudo certo, gera o manifesto."""
     args = parse_args()
@@ -236,12 +373,20 @@ def main():
     csv_file = cfg['paths']['csv'] / 'ratings.csv'
     fase1_part = pq_dir / 'ratings_by_year'
     cloud_dir = ROOT / 'data' / 'cloud' / pasta
+    part_dir = cloud_dir / 'ratings_part'
     manifest = ROOT / 'reports' / f'cloud_manifest_{ds}.md'
     print(f'[prepare_cloud] dataset={ds} -> data/cloud/{pasta}/')
 
-    # 0. As entradas da fase 1 têm de existir
-    tables = [t for t in SCHEMAS if (pq_dir / f'{t}.parquet').exists()]   # o 1M não tem tags nem links
-    em_falta = [str(p) for p in (pq_dir / 'ratings.parquet', fase1_part, csv_file) if not p.exists()]
+    # 0. As entradas da fase 1 têm de existir. O 1M não tem tags nem links, por isso a lista
+    #    de tabelas é a das que existem em Parquet.
+    tables = []
+    for t in SCHEMAS:
+        if (pq_dir / f'{t}.parquet').exists():
+            tables.append(t)
+    em_falta = []
+    for p in (pq_dir / 'ratings.parquet', fase1_part, csv_file):
+        if not p.exists():
+            em_falta.append(str(p))
     if em_falta:
         sys.exit('Erro: faltam ficheiros da fase 1: ' + ', '.join(em_falta) +
                  f'\nCorre primeiro: python run_pipeline.py --dataset {ds} --steps ingest parquet')
@@ -264,106 +409,24 @@ def main():
     # A ordem das linhas não interessa e desligá-la poupa memória no 32M (como no 02_to_parquet.py)
     con.execute('SET preserve_insertion_order = false')
 
-    # 1. Uma pasta por tabela, um ficheiro Parquet zstd em cada. SELECT * sem casts mantém os tipos.
-    for table in tables:
-        src = pq_dir / f'{table}.parquet'
-        dst = cloud_dir / table / f'{table}.parquet'
-        dst.parent.mkdir()
-        t0 = time.perf_counter()
-        con.execute(f"""
-            COPY (SELECT * FROM read_parquet('{src.as_posix()}'))
-            TO '{dst.as_posix()}' (FORMAT parquet, COMPRESSION zstd)
-        """)
-        print(f'  {table:12} {mb(src):>8.2f} MB (fase 1) -> {mb(dst):>8.2f} MB zstd em {time.perf_counter() - t0:.2f} s')
+    # 1 a 3. Escrever os ficheiros
+    copiar_tabelas(con, tables, pq_dir, cloud_dir)
+    particionar_ratings(con, pq_dir, part_dir)
+    csv_dst = copiar_csv(csv_file, cloud_dir)
 
-    # 2. ratings particionado por ano. Com PARTITION_BY, o DuckDB não escreve a coluna
-    # year dentro dos ficheiros: o valor fica só no nome da pasta (year=2015/).
-    part_dir = cloud_dir / 'ratings_part'
-    t0 = time.perf_counter()
-    con.execute(f"""
-        COPY (SELECT *, year(to_timestamp("timestamp")) AS year
-              FROM read_parquet('{(pq_dir / 'ratings.parquet').as_posix()}'))
-        TO '{part_dir.as_posix()}' (FORMAT parquet, PARTITION_BY (year), COMPRESSION zstd)
-    """)
-    n_part = len(list(part_dir.glob('year=*')))
-    print(f'  {"ratings_part":12} {mb(part_dir):>8.2f} MB zstd em {n_part} partições, {time.perf_counter() - t0:.2f} s')
-
-    # 3. Cópia do CSV, byte a byte (no 1M é o CSV normalizado, porque o original vem em .dat)
-    (cloud_dir / 'ratings_csv').mkdir()
-    csv_dst = cloud_dir / 'ratings_csv' / 'ratings.csv'
-    shutil.copyfile(csv_file, csv_dst)
-    print(f'  {"ratings_csv":12} {mb(csv_dst):>8.2f} MB (cópia do CSV)')
-
-    # 4. Verificações. Juntam-se todos os problemas para os mostrar de uma vez.
+    # 4. Verificações. Juntam-se todos os problemas numa lista para os mostrar de uma vez.
     print('[prepare_cloud] verificações')
     problemas = check_structure(cloud_dir, tables)
-    info_tabelas, info_comp = [], []
-
-    for table in tables:
-        src = (pq_dir / f'{table}.parquet').as_posix()
-        dst_dir = cloud_dir / table
-        dst = (dst_dir / '*.parquet').as_posix()
-        n_src, n_dst = count_of(con, src), count_of(con, dst)
-        if n_src != n_dst:
-            problemas.append(f'{table}: {n_dst} linhas em data/cloud, {n_src} na origem')
-        sch_src, sch_dst = schema_of(con, src), schema_of(con, dst)
-        if sch_src != sch_dst:
-            problemas.append(f'{table}: schema diferente da origem: {sch_dst} vs {sch_src}')
-        comp = compression_of(con, dst)
-        if comp != 'ZSTD':
-            problemas.append(f'{table}: compressão {comp}, esperada ZSTD')
-        info_tabelas.append({'nome': table, 'caminho': f'{table}/', 'ficheiros': len(list(dst_dir.iterdir())),
-                             'mb': mb(dst_dir), 'linhas': n_dst, 'compressao': comp, 'schema': sch_dst})
-        info_comp.append({'nome': table, 'origem': f'data/{ds}/parquet/{table}.parquet',
-                          'comp_origem': compression_of(con, src), 'mb_origem': mb(pq_dir / f'{table}.parquet'),
-                          'mb_cloud': mb(dst_dir)})
-    n_ratings = info_tabelas[0]['linhas']   # ratings é sempre a primeira tabela do SCHEMAS
-
-    # ratings_part: soma das partições, year ausente dos ficheiros, tipos e contagens por ano
-    part_glob = (part_dir / '*' / '*.parquet').as_posix()
-    n_part_total = count_of(con, part_glob, hive=True)
-    if n_part_total != n_ratings:
-        problemas.append(f'ratings_part: {n_part_total} linhas na soma das partições, {n_ratings} em ratings')
-    sch_part = schema_of(con, part_glob, hive=False)   # sem hive: só o que está dentro dos ficheiros
-    if any(c.lower() == 'year' for c, _ in sch_part):
-        problemas.append('ratings_part: a coluna year está repetida dentro dos ficheiros')
-    if sch_part != info_tabelas[0]['schema']:
-        problemas.append(f'ratings_part: schema diferente de ratings: {sch_part}')
-    comp_part = compression_of(con, part_glob)
-    if comp_part != 'ZSTD':
-        problemas.append(f'ratings_part: compressão {comp_part}, esperada ZSTD')
-
-    por_ano = counts_by_year(con, part_glob)
-    por_ano_fase1 = counts_by_year(con, (fase1_part / '*' / '*.parquet').as_posix())
-    for ano in sorted(set(por_ano) | set(por_ano_fase1)):
-        if por_ano.get(ano, 0) != por_ano_fase1.get(ano, 0):
-            problemas.append(f'ratings_part: ano {ano} com {por_ano.get(ano, 0)} linhas, '
-                             f'{por_ano_fase1.get(ano, 0)} no ratings_by_year da fase 1')
-
-    particoes = []
-    for ano in sorted(por_ano):
-        d = part_dir / f'year={ano}'
-        particoes.append({'ano': ano, 'linhas': por_ano[ano], 'mb': mb(d), 'ficheiros': len(list(d.iterdir()))})
-    info_tabelas.insert(1, {'nome': 'ratings_part', 'caminho': 'ratings_part/year=AAAA/',
-                            'ficheiros': sum(p['ficheiros'] for p in particoes), 'mb': mb(part_dir),
-                            'linhas': n_part_total, 'compressao': comp_part, 'schema': sch_part})
-    info_comp.insert(1, {'nome': 'ratings_part', 'origem': f'data/{ds}/parquet/ratings_by_year/',
-                         'comp_origem': compression_of(con, (fase1_part / '*' / '*.parquet').as_posix()),
-                         'mb_origem': mb(fase1_part), 'mb_cloud': mb(part_dir)})
-
-    # ratings_csv: mesmo tamanho que a origem e mesmo n.º de linhas que ratings
-    if csv_dst.stat().st_size != csv_file.stat().st_size:
-        problemas.append('ratings_csv: tamanho diferente do CSV de origem')
-    # Mesmas opções de leitura que o 02_to_parquet.py usa para o CSV
-    n_csv = con.execute(f"""
-        SELECT count(*) FROM read_csv('{csv_dst.as_posix()}', header=true, delim=',', quote='"', escape='"',
-                                      columns={duckdb_columns(SCHEMAS['ratings'])})
-    """).fetchone()[0]
-    if n_csv != n_ratings:
-        problemas.append(f'ratings_csv: {n_csv} linhas, {n_ratings} em ratings')
-    info_tabelas.insert(2, {'nome': 'ratings_csv', 'caminho': 'ratings_csv/', 'ficheiros': 1, 'mb': mb(csv_dst),
-                            'linhas': n_csv, 'compressao': 'nenhuma (CSV)',
-                            'schema': list(SCHEMAS['ratings'].items())})
+    info_tabelas, info_comp = verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas)
+    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira tabela do SCHEMAS
+    schema_ratings = info_tabelas[0]['schema']
+    particoes, info_part, comp_part = verificar_particoes(con, ds, part_dir, fase1_part, n_ratings,
+                                                          schema_ratings, problemas)
+    info_csv = verificar_csv(con, csv_file, csv_dst, n_ratings, problemas)
+    # No manifesto, ratings_part e ratings_csv aparecem logo a seguir a ratings
+    info_tabelas.insert(1, info_part)
+    info_tabelas.insert(2, info_csv)
+    info_comp.insert(1, comp_part)
 
     for t in info_tabelas:
         print(f'  {t["nome"]:12} {t["linhas"]:>12,} linhas  {t["ficheiros"]:>3} ficheiro(s)  {t["mb"]:>8.2f} MB')
