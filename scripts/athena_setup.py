@@ -37,8 +37,14 @@ from athena_common import ATHENA_SQL, Athena, AthenaError, add_aws_args, aws_set
 from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config
 from prepare_cloud import ATHENA_TYPES, count_of, counts_by_year, schema_of
 
-# Apanha o nome da tabela, a lista de colunas e (se existir) a lista de partições de um CREATE TABLE
-RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
+# Apanha o nome da tabela, a lista de colunas e (se existir) a lista de partições de um CREATE TABLE.
+# Leitura da expressão regular (regex):
+#   \s+  um ou mais espaços (ou mudanças de linha)
+#   (\w+)  grupo 1: o nome da tabela (letras, algarismos e _)
+#   \((.*?)\)  grupo 2: tudo o que está entre os primeiros parênteses (a lista de colunas)
+#   (?:\s*PARTITIONED\s+BY\s*\((.*?)\))?  grupo 3, opcional: as colunas de partição
+# IGNORECASE: maiúsculas ou minúsculas; DOTALL: o "." também apanha mudanças de linha.
+RE_CREATE =re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
                        r'(?:\s*PARTITIONED\s+BY\s*\((.*?)\))?', re.IGNORECASE | re.DOTALL)
 
 
@@ -56,8 +62,9 @@ def parse_args():
 def parse_columns(texto):
     """'userid int, `timestamp` bigint' -> [('userid', 'int'), ('timestamp', 'bigint')]"""
     colunas = []
-    for parte in texto.split(','):
-        nome, tipo = parte.split()
+    for parte in texto.split(','):          # uma parte por coluna: "userid int"
+        nome, tipo = parte.split()          # separa pelos espaços: nome e tipo
+        # Tira os backticks (`timestamp`) e passa tudo a minúsculas, como no catálogo do Athena
         colunas.append((nome.strip('`').lower(), tipo.lower()))
     return colunas
 
@@ -65,10 +72,16 @@ def parse_columns(texto):
 def ddl_statements(params):
     """Lista de (ficheiro, tabela ou None, sql) pela ordem dos ficheiros de sql/athena/ddl/."""
     instrucoes = []
+    # Os ficheiros começam por 00_, 01_, ...: a ordem alfabética é a ordem de execução
     for path in sorted((ATHENA_SQL / 'ddl').glob('*.sql')):
         sql = read_sql(path, params)
         m = RE_CREATE.search(sql)
-        instrucoes.append((path.name, m.group(1).lower() if m else None, sql))
+        # Ficheiros que não são CREATE TABLE (base de dados, MSCK REPAIR) ficam com tabela None
+        if m:
+            tabela = m.group(1).lower()
+        else:
+            tabela = None
+        instrucoes.append((path.name, tabela, sql))
     return instrucoes
 
 
@@ -100,15 +113,24 @@ def check_ddl(con, cloud_dir, instrucoes):
     """Compara as colunas de cada CREATE TABLE com os ficheiros locais. Devolve a lista de problemas."""
     problemas = []
     for ficheiro, table, sql in instrucoes:
+        # Só os CREATE TABLE de tabelas que existem neste dataset
         if table is None or not (cloud_dir / table).exists():
             continue
         m = RE_CREATE.search(sql)
+        # Colunas: as do DDL (grupo 2 da regex) têm de ser iguais às dos ficheiros
         no_ddl = parse_columns(m.group(2))
         nos_ficheiros = local_schema(con, cloud_dir, table)
         if no_ddl != nos_ficheiros:
             problemas.append(f'{ficheiro}: colunas {no_ddl} diferentes dos ficheiros {nos_ficheiros}')
-        particoes = parse_columns(m.group(3)) if m.group(3) else []
-        esperado = [('year', 'int')] if table == 'ratings_part' else []
+        # Partições (grupo 3): só o ratings_part é particionado, por year
+        if m.group(3):
+            particoes = parse_columns(m.group(3))
+        else:
+            particoes = []
+        if table == 'ratings_part':
+            esperado = [('year', 'int')]
+        else:
+            esperado = []
         if particoes != esperado:
             problemas.append(f'{ficheiro}: partições {particoes}, esperado {esperado}')
     return problemas
@@ -129,11 +151,18 @@ def main():
     if not args.dry_run:
         resolve_buckets(aws)
 
+    # Valores que substituem ${database}, ${pasta} e ${bucket} no DDL. No dry-run ainda não
+    # sabemos o bucket, por isso fica um texto de exemplo.
     params = {'database': aws['database'], 'pasta': aws['pasta'],
               'bucket': aws.get('bucket_dados') or '<bucket-dados>'}
     # Só as tabelas que existem neste dataset (o 1M não tem tags nem links)
-    instrucoes = [(f, t, s) for f, t, s in ddl_statements(params) if t is None or (cloud_dir / t).exists()]
-    tabelas = [t for _, t, _ in instrucoes if t]
+    instrucoes = []
+    tabelas = []
+    for ficheiro, tabela, sql in ddl_statements(params):
+        if tabela is None or (cloud_dir / tabela).exists():
+            instrucoes.append((ficheiro, tabela, sql))
+            if tabela:
+                tabelas.append(tabela)
 
     # 1. Sem AWS: o DDL tem de coincidir com os ficheiros que foram (ou vão) para o S3
     con = duckdb.connect()
@@ -154,9 +183,14 @@ def main():
     athena = Athena(aws)
     try:
         for ficheiro, table, sql in instrucoes:
+            # --recriar: apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
             if args.recriar and table:
                 athena.run(f'DROP TABLE IF EXISTS `{table}`', aws['database'])
-            database = None if ficheiro.startswith('00_') else aws['database']
+            # 00_database.sql cria a base de dados, por isso ainda não pode correr "dentro" dela
+            if ficheiro.startswith('00_'):
+                database = None
+            else:
+                database = aws['database']
             stats = athena.run(sql, database)
             print(f'  {ficheiro:32} OK ({stats["total_s"]:.1f} s)')
 
@@ -173,13 +207,19 @@ def main():
                 problemas.append(f'{table}: {n_athena} linhas no Athena, {n_local} nos ficheiros')
             print(f'  {table:12} Athena {n_athena:>12,}  local {n_local:>12,}  {estado}')
 
+        # Contagens por ano: se o MSCK REPAIR TABLE não tiver visto as pastas, faltam anos
         stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'])
         custo_bytes += stats['scanned_bytes']
-        por_ano_athena = {int(ano): int(n) for ano, n in athena.rows(stats['id'])}
+        por_ano_athena = {}
+        for ano, n in athena.rows(stats['id']):   # o Athena devolve texto: converte-se para int
+            por_ano_athena[int(ano)] = int(n)
         por_ano_local = counts_by_year(con, (cloud_dir / 'ratings_part' / '*' / '*.parquet').as_posix())
         if por_ano_athena != por_ano_local:
-            diferentes = sorted(a for a in set(por_ano_athena) | set(por_ano_local)
-                                if por_ano_athena.get(a) != por_ano_local.get(a))
+            # Anos com contagens diferentes (incluindo anos que só existem num dos lados)
+            diferentes = []
+            for ano in sorted(set(por_ano_athena) | set(por_ano_local)):
+                if por_ano_athena.get(ano) != por_ano_local.get(ano):
+                    diferentes.append(ano)
             problemas.append(f'ratings_part: contagens por ano diferentes nos anos {diferentes} '
                              '(faltou o MSCK REPAIR TABLE?)')
         print(f'  ratings_part {len(por_ano_athena)} partições no Athena, {len(por_ano_local)} nos ficheiros')
