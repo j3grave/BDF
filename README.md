@@ -315,13 +315,14 @@ são disponibilizados apenas para **uso pessoal e não comercial**, nas condiç�
 | Etapa | O que faz |
 |---|---|
 | Download e Parquet | `\N` passa a nulo, tipos numéricos e géneros em lista. Só converte se o Parquet não existir ou for mais antigo. Tamanhos em `results/sizes.csv` (dataset `imdb`, com o TSV descomprimido, o TSV.gz e o Parquet). |
-| Ligação | `tconst = 'tt' + imdbId`, com zeros à esquerda até 7 algarismos. O `lpad` só se aplica aos ids com menos de 7 algarismos, porque o `lpad` do DuckDB e do Trino corta os ids de 8 algarismos (7 067 filmes no 32M). Não se filtra pelo tipo de título. |
+| Ligação | `tconst = 'tt' + imdbId`, com zeros à esquerda até 7 algarismos. O `lpad` só se aplica aos ids com menos de 7 algarismos, porque o `lpad` do DuckDB e do Trino corta os ids de 8 algarismos (7 067 filmes no 32M). |
+| Tipo de título | Só entram nas análises os títulos do tipo `movie` (`imdb.tipos_titulo` no `config.yaml`). Séries, episódios, curtas, vídeos e filmes para TV contam na tabela da ligação (categoria 5), mas ficam de fora da P1 e da P2. |
 | Escala | Nota do MovieLens × 2 (0,5–5 → 1–10, os extremos do IMDb). É linear: não muda a ordem nem as correlações. Gap = IMDb − MovieLens×2. |
 | P1 | Gap médio com IC 95%, Pearson e Spearman; gap por género, por década e por popularidade (quintis de votos); os 10 filmes mais divergentes em cada sentido; sensibilidade aos limiares. |
 | P2 | Segmentos de utilizadores do MovieLens (atividade, era de registo, bots) comparados com o IMDb sobre o mesmo conjunto de filmes. |
 | Desempenho | Join MovieLens × IMDb em CSV/TSV.gz e em Parquet, mediana de 3 corridas, em `results/benchmarks.csv` (`imdb_join`). |
 
-Os limiares estão na secção `imdb` do `config.yaml`: pelo menos 50 avaliações no MovieLens e 1000
+Os limiares e os tipos de título estão na secção `imdb` do `config.yaml`: pelo menos 50 avaliações no MovieLens e 1000
 votos no IMDb. As queries estão em `sql/imdb/` (DuckDB) e `sql/athena/imdb/` (Athena). Os
 resultados ficam em `results/<dataset>/imdb/`: um CSV por query, `sensibilidade.csv`,
 `imdb_qualidade.csv`, quatro figuras e o `imdb_relatorio.md`.
