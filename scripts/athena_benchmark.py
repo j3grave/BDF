@@ -107,13 +107,20 @@ def load_queries():
     queries = []
     for athena_file in sorted((ATHENA_SQL / 'queries').glob('*.sql')):
         nome = athena_file.stem
-        candidatos = [ROOT / 'sql' / f'{nome}.sql', ROOT / 'sql' / 'cloud' / f'{nome}.sql']
-        duckdb_file = next((p for p in candidatos if p.exists()), None)
+        # A versão DuckDB tem o mesmo nome: procura-se primeiro em sql/ (fase 1) e depois em sql/cloud/
+        duckdb_file = None
+        for candidato in (ROOT / 'sql' / f'{nome}.sql', ROOT / 'sql' / 'cloud' / f'{nome}.sql'):
+            if candidato.exists():
+                duckdb_file = candidato
+                break
         if duckdb_file is None:
             sys.exit(f'Erro: {athena_file.name} não tem versão DuckDB em sql/ nem em sql/cloud/')
         texto_athena = athena_file.read_text()
         # Queries que só usam movies não dependem do formato dos ratings: correm uma vez
-        formatos = FORMATOS_RATINGS if '${ratings}' in texto_athena else ['parquet']
+        if '${ratings}' in texto_athena:
+            formatos = FORMATOS_RATINGS
+        else:
+            formatos = ['parquet']
         queries.append((nome, athena_file, duckdb_file.read_text(), formatos))
     return queries
 
@@ -167,6 +174,7 @@ def main():
     linhas_csv = []        # só são escritas no fim, se os dois motores concordarem
     bytes_athena = 0
 
+    # Para cada query e cada formato: primeiro o DuckDB (local) e depois o Athena (S3)
     for nome, athena_file, texto_duckdb, formatos in queries:
         for fmt in formatos:
             if 'duckdb' in args.engines and not args.dry_run:
@@ -199,9 +207,14 @@ def main():
                 print(f"  athena  {nome:30} {fmt:13} {r['median_s'] * 1000:9.1f} ms  {r['n_rows']:>8,} linhas"
                       f"  {r['scanned_bytes'] / 1e6:9.2f} MB lidos")
 
-    # O n.º de linhas tem de ser igual nos dois motores (os valores podem diferir na mediana da 03)
-    diferentes = [(q, f) for (q, f, e) in n_linhas if e == 'duckdb' and (q, f, 'athena') in n_linhas
-                  and n_linhas[(q, f, 'duckdb')] != n_linhas[(q, f, 'athena')]]
+    # O n.º de linhas tem de ser igual nos dois motores (os valores podem diferir na mediana da 03).
+    # Para cada (query, formato) que correu nos dois motores, compara-se o n.º de linhas.
+    diferentes = []
+    for (q, f, motor) in n_linhas:
+        if motor != 'duckdb' or (q, f, 'athena') not in n_linhas:
+            continue
+        if n_linhas[(q, f, 'duckdb')] != n_linhas[(q, f, 'athena')]:
+            diferentes.append((q, f))
     if usar_athena:
         print(f'[cloud_benchmark] Athena: {bytes_athena / 1e9:.2f} GB cobrados no total, '
               f'custo estimado {bytes_athena / 1e12 * USD_POR_TB:.4f} USD')
