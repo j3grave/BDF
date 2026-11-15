@@ -1,6 +1,9 @@
--- 10_flag_bots.sql — ESQUELETO, ainda sem regras.
--- As regras para identificar utilizadores suspeitos (bots) vão ser definidas pelo Luís.
--- Enquanto este ficheiro só tiver comentários, o 03_benchmark.py ignora-o.
+-- 10_flag_bots.sql — ESQUELETO, sem regras (fica só como modelo).
+-- A deteção de bots está em sql/analise/10_flag_bots.sql (versão Athena em
+-- sql/athena/analise/10_flag_bots.sql), corrida pelo scripts/05_analises.py. As regras
+-- ainda estão a ser validadas pelo Luís.
+-- Este ficheiro fica em sql/ só com comentários para não alterar o benchmark da fase 1:
+-- enquanto não tiver SQL, o 03_benchmark.py ignora-o.
 --
 -- Parâmetros disponíveis: ${ratings}, ${movies}
 -- Colunas de ${ratings}: userId, movieId, rating, timestamp, year
