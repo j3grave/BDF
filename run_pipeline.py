@@ -8,8 +8,10 @@ Objetivo:
         benchmark  scripts/03_benchmark.py   medir o tempo das queries de sql/
         eda        scripts/04_eda.py         análise exploratória (figuras e relatório)
         analises   scripts/05_analises.py    queries de análise de sql/analise/ (CSV e relatório)
-    E um passo da fase 2 que só corre quando é pedido com --steps cloud (usa a AWS e tem custos):
-        cloud      scripts/cloud_pipeline.py  S3 -> Glue -> Athena: upload, catálogo e benchmark
+    E dois passos que só correm quando são pedidos com --steps:
+        cloud      scripts/cloud_pipeline.py  fase 2: S3 -> Glue -> Athena (usa a AWS e tem custos)
+        imdb       scripts/07_imdb.py         fase 3: IMDb vs MovieLens (descarrega ~240 MB do IMDb;
+                                              precisa do links.csv, por isso não corre com o 1M)
 
 Entradas:
     config.yaml e a opção --dataset (small | 1m | 32m).
@@ -24,6 +26,7 @@ Como correr:
     python run_pipeline.py --dataset small                       todos os passos
     python run_pipeline.py --dataset 1m --steps ingest parquet   só alguns passos
     python run_pipeline.py --dataset small --steps cloud         fase cloud (AWS Academy Learner Lab)
+    python run_pipeline.py --dataset small --steps imdb          comparação com o IMDb
 """
 import argparse
 import subprocess
@@ -54,10 +57,13 @@ STEPS = {
     'eda': 'scripts/04_eda.py',
     'analises': 'scripts/05_analises.py',
     'cloud': 'scripts/cloud_pipeline.py',
+    'imdb': 'scripts/07_imdb.py',
 }
-# O passo cloud fica fora dos passos por omissão: usa a AWS (credenciais e custos),
-# por isso só corre quando é pedido explicitamente com --steps cloud.
-STEPS_OMISSAO = [step for step in STEPS if step != 'cloud']
+# Passos que ficam fora dos passos por omissão e só correm quando são pedidos com --steps:
+# - cloud: usa a AWS (credenciais e custos);
+# - imdb: descarrega cerca de 240 MB do IMDb e não funciona com o 1M (que não tem links.csv).
+PASSOS_A_PEDIDO = ('cloud', 'imdb')
+STEPS_OMISSAO = [step for step in STEPS if step not in PASSOS_A_PEDIDO]
 
 
 def main():
@@ -66,7 +72,7 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
     parser.add_argument('--steps', nargs='+', choices=list(STEPS), default=STEPS_OMISSAO,
-                        help=f"por omissão: {' '.join(STEPS_OMISSAO)} (o cloud só com --steps cloud)")
+                        help=f"por omissão: {' '.join(STEPS_OMISSAO)} (cloud e imdb só a pedido)")
     parser.add_argument('--bucket-dados', dest='bucket_dados', help='só passo cloud: bucket com data/cloud/<pasta>/')
     parser.add_argument('--bucket-resultados', dest='bucket_resultados',
                         help='só passo cloud: bucket dos resultados do Athena')
