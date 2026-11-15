@@ -635,6 +635,19 @@ def escrever_relatorio(saida, ds, p, sens, bench, figuras, comparacao, segundos)
          tabela_md(seg, ['tipo', 'segmento', 'utilizadores', 'filmes_comuns', 'avaliacoes', 'media_segmento_10',
                          'media_imdb', 'gap_medio', 'gap_ic95_inf', 'gap_ic95_sup', 'pearson', 'spearman']), '',
          '## Desempenho', '']
+    # Tamanhos: a última conversão de cada tabela do IMDb registada em results/sizes.csv
+    tamanhos = pd.read_csv(ROOT / 'results' / 'sizes.csv')
+    tamanhos = tamanhos[tamanhos.dataset == 'imdb'].drop_duplicates('table', keep='last')
+    if len(tamanhos):
+        L += ['| Tabela | TSV (MB) | TSV.gz (MB) | Parquet snappy (MB) | Parquet / TSV |', '|---|---:|---:|---:|---:|']
+        for _, t in tamanhos.iterrows():
+            L.append(f"| {t['table']} | {eda.num(t.csv_mb, 1)} | {eda.num(t.tsv_gz_mb, 1)} | "
+                     f"{eda.num(t.parquet_mb, 1)} | {eda.num(100 * t.parquet_mb / t.csv_mb, 0)}% |")
+        L += ['', 'O Parquet ocupa muito menos do que o TSV descomprimido. Comparado com o TSV.gz, o '
+              '`title_basics` (quase só texto: títulos) pode até ficar maior, porque o gzip comprime o '
+              'ficheiro inteiro. A vantagem do Parquet está na leitura: uma query lê só as colunas de que '
+              'precisa (no join, só `tconst` e `titleType` das 9 colunas do `title_basics`), sem '
+              'descomprimir nem converter o resto.', '']
     ganho = bench['csv'][0] / bench['parquet'][0] if bench['parquet'][0] else float('nan')
     L += [f"Join MovieLens × IMDb (`00_filmes.sql`), mediana de {RUNS} corridas: CSV/TSV.gz "
           f"{eda.num(bench['csv'][0] * 1000, 0)} ms, Parquet {eda.num(bench['parquet'][0] * 1000, 0)} ms "
