@@ -146,6 +146,11 @@ MACROS_ATHENA = [
 # (100.0 * x / y, x * 1.0 / y) fica com a escala do literal (1 casa decimal), enquanto no DuckDB
 # dá um número real. Nas versões Athena usa-se CAST(... AS double); esta verificação apanha
 # esquecimentos.
+# Leitura da expressão regular (regex):
+#   \d+\.\d+   um número com parte decimal, ex.: 100.0
+#   \s*        espaços opcionais
+#   [*/]       um sinal de multiplicar ou dividir
+# A primeira metade apanha "100.0 *" (literal antes da conta) e a segunda "* 1.0" (literal depois).
 DECIMAL_EM_CONTA = re.compile(r'(\d+\.\d+\s*[*/])|([*/]\s*\d+\.\d+)')
 
 
@@ -173,16 +178,26 @@ def preparar_emulacao(con):
 # ---------------------------------------------------------------------------
 def listar_queries(pasta, pedidas):
     """Ficheiros .sql de uma pasta (ordem alfabética), filtrados por --queries com as dependências."""
-    ficheiros = {f.stem: f for f in sorted(pasta.glob('*.sql'))}
-    if pedidas:
-        desconhecidas = [q for q in pedidas if q not in ficheiros]
-        if desconhecidas:
-            raise SystemExit(f'Queries desconhecidas: {desconhecidas}. Existem: {list(ficheiros)}')
-        nomes = set(pedidas)
-        for q in pedidas:
-            nomes.update(DEPENDENCIAS.get(q, []))
-        ficheiros = {k: v for k, v in ficheiros.items() if k in nomes}
-    return ficheiros
+    # Dicionário nome -> ficheiro, ex.: {'anual': Path('sql/analise/anual.sql'), ...}
+    ficheiros = {}
+    for f in sorted(pasta.glob('*.sql')):
+        ficheiros[f.stem] = f
+    if not pedidas:
+        return ficheiros   # sem --queries: corre todas
+
+    desconhecidas = [q for q in pedidas if q not in ficheiros]
+    if desconhecidas:
+        raise SystemExit(f'Queries desconhecidas: {desconhecidas}. Existem: {list(ficheiros)}')
+    # Juntamos às queries pedidas aquelas de que dependem (ex.: eventos precisa de 10_flag_bots)
+    nomes = set(pedidas)
+    for q in pedidas:
+        nomes.update(DEPENDENCIAS.get(q, []))
+    # Mantemos só as escolhidas, pela ordem alfabética original
+    escolhidas = {}
+    for nome, ficheiro in ficheiros.items():
+        if nome in nomes:
+            escolhidas[nome] = ficheiro
+    return escolhidas
 
 
 def correr(con, nome, ficheiro, fontes, destino):
@@ -258,10 +273,16 @@ REFERENCIA_BOTS = {
 }
 
 
+def inteiro(x):
+    """Número sem casas decimais, ou '-' se o valor estiver em falta (NaN)."""
+    if pd.isna(x):
+        return '-'
+    return f'{x:.0f}'
+
+
 def justificar(r):
     """Texto com os números que levam à classificação de um utilizador (linha de 10_flag_bots.csv)."""
-    def inteiro(x):
-        return '-' if pd.isna(x) else f'{x:.0f}'
+    # Uma frase por regra que o utilizador cumpre; se não cumprir nenhuma, explicamos porquê
     partes = []
     if r.regra_a:
         partes.append(f'regra A: {inteiro(r.max_eventos_10min_apos)} eventos em 10 min depois do registo '
@@ -299,16 +320,20 @@ def referencia_bots(pasta, ds):
 
 def iguais(a, b, tol=1e-6):
     """Compara dois resultados pela posição das colunas (no Athena os nomes saem em minúsculas)."""
+    # shape = (n.º de linhas, n.º de colunas): se for diferente, nem vale a pena comparar valores
     if a.shape != b.shape:
         return False, f'formas diferentes: {a.shape} vs {b.shape}'
     for j in range(a.shape[1]):
-        x, y = a.iloc[:, j], b.iloc[:, j]
+        x, y = a.iloc[:, j], b.iloc[:, j]   # coluna j de cada resultado
         if pd.api.types.is_numeric_dtype(x) and pd.api.types.is_numeric_dtype(y):
+            # Números: iguais a menos de uma tolerância (as somas em vírgula flutuante podem
+            # diferir no último dígito). Dois valores em falta contam como iguais.
             for u, v in zip(x, y):
                 if pd.isna(u) and pd.isna(v):
                     continue
                 if pd.isna(u) or pd.isna(v) or not math.isclose(u, v, rel_tol=tol, abs_tol=tol):
                     return False, f'coluna {a.columns[j]}: {u} vs {v}'
+        # Texto (ou tipos diferentes): compara-se o texto de cada valor
         elif not (x.astype(str).values == y.astype(str).values).all():
             return False, f'coluna {a.columns[j]} difere'
     return True, ''
@@ -343,7 +368,8 @@ def escrever_relatorio(pasta, ds, origem, resumo, verif, comparacao, segundos):
               f"{int(c.sinalizados_a_p99_5)} / {int(c.sinalizados_a_p99_9)} (a query usa o p99,9).", '']
         lote = flags[flags.submissao_lote]
         if len(lote):
-            decadas = (lote.primeiro_dia.str[:3] + '0s').value_counts().sort_index()
+            # Década do primeiro rating: '2016-03-01'[:3] = '201' -> '2010s'
+            decadas =(lote.primeiro_dia.str[:3] + '0s').value_counts().sort_index()
             L.append('Submissão em lote por década do primeiro rating: '
                      + ', '.join(f'{d}: {n}' for d, n in decadas.items()) + '.')
             L.append('')
@@ -377,6 +403,7 @@ def main():
     pasta.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
 
+    # 1. Queries DuckDB: cada uma grava o seu CSV
     con, origem = ligar(cfg, args.fonte)
     print(f'[analises] dataset={ds} fonte={args.fonte}')
     resumo = []
@@ -387,6 +414,8 @@ def main():
     con.close()
     pd.DataFrame(resumo).to_csv(pasta / 'analises_resumo.csv', index=False)
 
+    # 2. (Opcional) Versões Athena emuladas: correm numa ligação nova "à Trino" e cada
+    #    resultado é comparado com o da versão DuckDB da mesma query
     comparacao = []
     if args.emular_athena:
         destino = pasta / 'athena_emulado'
@@ -412,6 +441,7 @@ def main():
         con.close()
         pd.DataFrame(comparacao).to_csv(destino / 'comparacao.csv', index=False)
 
+    # 3. Verificações, relatório e, se alguma falhar, erro (o pipeline pára)
     verif = verificar(pasta, ds) + referencia_bots(pasta, ds)
     segundos = time.perf_counter() - t0
     escrever_relatorio(pasta, ds, origem, resumo, verif, comparacao, segundos)
