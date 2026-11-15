@@ -101,3 +101,5 @@ run_at,dataset,query,formato,median_s,n_rows
 2026-11-09T18:40:52,small,05_ratings_por_ano,parquet_by_year,0.0022,23
 2026-11-15T16:39:48,small,imdb_join,csv,1.9543,9724
 2026-11-15T16:39:49,small,imdb_join,parquet,0.0839,9724
+2026-11-15T16:40:46,32m,imdb_join,csv,2.4189,84432
+2026-11-15T16:40:46,32m,imdb_join,parquet,0.2305,84432

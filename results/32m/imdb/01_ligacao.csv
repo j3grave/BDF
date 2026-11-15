@@ -1,0 +1,5 @@
+categoria,filmes,pct_filmes,avaliacoes_ml,pct_avaliacoes_ml
+2. tconst não existe no title.basics,223,0.264117870001895,22991,0.07184641697909176
+3. sem nota no title.ratings,99,0.11725412166003411,273,0.0008531195613627964
+4. ligado e com nota (entra nas análises),68529,81.16472427515635,31586601,98.70749886469474
+5. com nota mas tipo de título excluído,15581,18.453903733181733,390339,1.2198015987648079
