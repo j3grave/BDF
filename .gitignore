@@ -39,3 +39,12 @@ credentials
 *credentials*.json
 *accessKeys*
 *.key
+
+# Dados do notebook do Luís (pasta de dados e zip de resultados)
+dados/
+lab_resultados.zip
+
+# Ficheiros comprimidos e dados do IMDb (já cobertos por data/, mas explícitos)
+*.zip
+*.tsv
+*.tsv.gz
