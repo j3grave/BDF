@@ -1,6 +1,6 @@
 # Análise exploratória · MovieLens small
 
-Gerado por `scripts/04_eda.py` em 1.2 s.
+Gerado por `scripts/04_eda.py` em 1.1 s.
 
 ## Fontes
 

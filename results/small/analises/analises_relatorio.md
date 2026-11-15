@@ -1,6 +1,6 @@
 # Análises · MovieLens small
 
-Gerado por `scripts/05_analises.py` em 0.3 s (sessão DuckDB em UTC).
+Gerado por `scripts/05_analises.py` em 0.2 s (sessão DuckDB em UTC).
 
 ## Fontes
 
@@ -31,22 +31,22 @@ Gerado por `scripts/05_analises.py` em 0.3 s (sessão DuckDB em UTC).
 
 | Query | Linhas | Segundos | CSV |
 |---|---:|---:|---|
-| 10_flag_bots | 610 | 0.077 | `10_flag_bots.csv` |
-| 10_flag_bots_calibracao | 1 | 0.011 | `10_flag_bots_calibracao.csv` |
-| anual | 23 | 0.013 | `anual.csv` |
-| distribuicao | 10 | 0.011 | `distribuicao.csv` |
-| eventos | 0 | 0.036 | `eventos.csv` |
-| evolucao_filmes | 366 | 0.013 | `evolucao_filmes.csv` |
-| filmes_ano | 39 | 0.022 | `filmes_ano.csv` |
-| filtros_eventos | 1 | 0.030 | `filtros_eventos.csv` |
-| grupos_atividade | 108 | 0.015 | `grupos_atividade.csv` |
-| integridade | 1 | 0.016 | `integridade.csv` |
-| mensal | 267 | 0.015 | `mensal.csv` |
-| perfis_ativos | 28 | 0.010 | `perfis_ativos.csv` |
-| perfis_cumulativos | 39 | 0.011 | `perfis_cumulativos.csv` |
-| ponderado | 10 | 0.011 | `ponderado.csv` |
-| qualidade | 1 | 0.013 | `qualidade.csv` |
-| valores_ano | 195 | 0.012 | `valores_ano.csv` |
+| 10_flag_bots | 610 | 0.024 | `10_flag_bots.csv` |
+| 10_flag_bots_calibracao | 1 | 0.003 | `10_flag_bots_calibracao.csv` |
+| anual | 23 | 0.004 | `anual.csv` |
+| distribuicao | 10 | 0.003 | `distribuicao.csv` |
+| eventos | 0 | 0.025 | `eventos.csv` |
+| evolucao_filmes | 366 | 0.007 | `evolucao_filmes.csv` |
+| filmes_ano | 39 | 0.009 | `filmes_ano.csv` |
+| filtros_eventos | 1 | 0.021 | `filtros_eventos.csv` |
+| grupos_atividade | 108 | 0.005 | `grupos_atividade.csv` |
+| integridade | 1 | 0.004 | `integridade.csv` |
+| mensal | 267 | 0.005 | `mensal.csv` |
+| perfis_ativos | 28 | 0.007 | `perfis_ativos.csv` |
+| perfis_cumulativos | 39 | 0.007 | `perfis_cumulativos.csv` |
+| ponderado | 10 | 0.004 | `ponderado.csv` |
+| qualidade | 1 | 0.006 | `qualidade.csv` |
+| valores_ano | 195 | 0.003 | `valores_ano.csv` |
 
 ## Deteção de bots (10_flag_bots, a validar com o Luís)
 
