@@ -3,12 +3,13 @@
 -- Diferença para o DuckDB: percentagens com CAST(... AS double); no Trino, 100.0 * x / y com
 -- inteiros ficaria em decimal com poucas casas.
 --
--- Parâmetros: ${filmes}
+-- Parâmetros: ${filmes}, ${tipos}
 SELECT CASE
            WHEN f.imdbid IS NULL      THEN '1. sem imdbId no links.csv'
            WHEN NOT f.existe_no_imdb  THEN '2. tconst não existe no title.basics'
            WHEN f.nota_imdb IS NULL   THEN '3. sem nota no title.ratings'
-           ELSE '4. ligado e com nota'
+           WHEN f.tipo_imdb NOT IN ${tipos} THEN '5. com nota mas tipo de título excluído'
+           ELSE '4. ligado e com nota (entra nas análises)'
        END                                                          AS categoria,
        COUNT(*)                                                     AS filmes,
        100 * CAST(COUNT(*) AS double) / SUM(COUNT(*)) OVER ()       AS pct_filmes,

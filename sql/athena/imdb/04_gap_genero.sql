@@ -3,12 +3,16 @@
 -- Diferenças para o DuckDB: CROSS JOIN UNNEST(...) AS t(genero) em vez de unnest() no SELECT;
 -- posição média nos empates com CAST(... AS double) / 2.
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}
 WITH f AS (
     SELECT t.genero, x.nota_ml_10, x.nota_imdb, x.gap
     FROM ${filmes} AS x
     CROSS JOIN UNNEST(x.generos_ml) AS t(genero)
     WHERE x.nota_imdb IS NOT NULL AND x.n_ml >= ${min_ml} AND x.votos_imdb >= ${min_imdb}
+      AND x.tipo_imdb IN ${tipos}
 ),
 r AS (
     SELECT genero, nota_ml_10, nota_imdb, gap,

@@ -2,12 +2,16 @@
 --
 -- Diferença para o DuckDB: posição média nos empates com CAST(... AS double) / 2.
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}, ${n_quantis}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}, ${n_quantis}
 WITH f AS (
     SELECT x.movieid, x.votos_imdb, x.nota_ml_10, x.nota_imdb, x.gap,
            ntile(${n_quantis}) OVER (ORDER BY x.votos_imdb, x.movieid) AS quantil
     FROM ${filmes} AS x
     WHERE x.nota_imdb IS NOT NULL AND x.n_ml >= ${min_ml} AND x.votos_imdb >= ${min_imdb}
+      AND x.tipo_imdb IN ${tipos}
 ),
 r AS (
     SELECT quantil, votos_imdb, nota_ml_10, nota_imdb, gap,

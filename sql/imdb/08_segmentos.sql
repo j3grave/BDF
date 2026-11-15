@@ -23,7 +23,10 @@
 --    mais "de acordo" só por avaliar filmes diferentes.
 -- 4. Por segmento: gap médio (IMDb - segmento) com IC 95%, Pearson e Spearman.
 --
--- Parâmetros: ${ratings}, ${filmes}, ${flag_bots}, ${min_seg}, ${min_imdb}, ${corte_era}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${ratings}, ${filmes}, ${tipos}, ${flag_bots}, ${min_seg}, ${min_imdb}, ${corte_era}
 WITH u AS (
     SELECT userId, COUNT(*) AS total, MIN(timestamp) AS primeiro_ts
     FROM ${ratings}
@@ -67,6 +70,7 @@ elegiveis AS (
     FROM por_filme p
     JOIN ${filmes} f ON f.movieId = p.movieId
     WHERE p.n >= ${min_seg} AND f.nota_imdb IS NOT NULL AND f.votos_imdb >= ${min_imdb}
+      AND f.tipo_imdb IN ${tipos}
 ),
 comuns AS (
     -- um filme é comum se for elegível em tantos segmentos quantos os do tipo

@@ -4,11 +4,15 @@
 -- o ano entre parênteses no título do MovieLens. Ex.: 1994 -> 1990. Filmes sem startYear
 -- ficam de fora.
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}
 WITH f AS (
     SELECT CAST(floor(ano_estreia / 10) * 10 AS INTEGER) AS decada, nota_ml_10, nota_imdb, gap
     FROM ${filmes}
     WHERE nota_imdb IS NOT NULL AND n_ml >= ${min_ml} AND votos_imdb >= ${min_imdb}
+      AND tipo_imdb IN ${tipos}
       AND ano_estreia IS NOT NULL
 ),
 r AS (

@@ -6,16 +6,18 @@
 --   2. com imdbId, mas o tconst não existe no title.basics (id removido ou fundido noutro
 --      no IMDb; o ficheiro público não diz qual);
 --   3. existe no title.basics, mas não tem nota no title.ratings (filme sem votos);
---   4. ligado e com nota.
--- Não se filtra por tipo de título (titleType): o MovieLens também tem séries, curtas e
--- documentários. O 02_ligacao_tipos.sql mostra a distribuição por tipo.
+--   4. ligado, com nota e de um tipo incluído (entra nas análises);
+--   5. ligado e com nota, mas de um tipo de título excluído (${tipos} no config.yaml:
+--      por omissão só 'movie'; ficam de fora séries, episódios, curtas e vídeos).
+-- O 02_ligacao_tipos.sql mostra a distribuição por tipo de título.
 --
--- Parâmetros: ${filmes}
+-- Parâmetros: ${filmes}, ${tipos}
 SELECT CASE
            WHEN imdbId IS NULL      THEN '1. sem imdbId no links.csv'
            WHEN NOT existe_no_imdb  THEN '2. tconst não existe no title.basics'
            WHEN nota_imdb IS NULL   THEN '3. sem nota no title.ratings'
-           ELSE '4. ligado e com nota'
+           WHEN tipo_imdb NOT IN ${tipos} THEN '5. com nota mas tipo de título excluído'
+           ELSE '4. ligado e com nota (entra nas análises)'
        END                                       AS categoria,
        COUNT(*)                                  AS filmes,
        100.0 * COUNT(*) / SUM(COUNT(*)) OVER ()  AS pct_filmes,

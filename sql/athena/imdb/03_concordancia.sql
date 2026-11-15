@@ -6,11 +6,15 @@
 -- - percentagem com CAST(... AS double).
 -- CORR, STDDEV_SAMP e SQRT existem no Trino com o mesmo nome.
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}
 WITH f AS (
     SELECT x.nota_ml_10, x.nota_imdb, x.gap
     FROM ${filmes} AS x
     WHERE x.nota_imdb IS NOT NULL AND x.n_ml >= ${min_ml} AND x.votos_imdb >= ${min_imdb}
+      AND x.tipo_imdb IN ${tipos}
 ),
 r AS (
     SELECT nota_ml_10, nota_imdb, gap,

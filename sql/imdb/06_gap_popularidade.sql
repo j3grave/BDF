@@ -4,12 +4,16 @@
 -- votos no IMDb (ntile; 1 = menos votados). O desempate por movieId torna a divisão sempre igual.
 -- Para cada grupo: votos mínimos e máximos, gap médio com IC 95%, Pearson e Spearman.
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}, ${n_quantis}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}, ${n_quantis}
 WITH f AS (
     SELECT movieId, votos_imdb, nota_ml_10, nota_imdb, gap,
            ntile(${n_quantis}) OVER (ORDER BY votos_imdb, movieId) AS quantil
     FROM ${filmes}
     WHERE nota_imdb IS NOT NULL AND n_ml >= ${min_ml} AND votos_imdb >= ${min_imdb}
+      AND tipo_imdb IN ${tipos}
 ),
 r AS (
     SELECT quantil, votos_imdb, nota_ml_10, nota_imdb, gap,

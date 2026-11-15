@@ -4,11 +4,15 @@
 -- inteira no Trino (1994 / 10 = 199); a década é (ano / 10) * 10. Posição média nos empates
 -- com CAST(... AS double) / 2.
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}
 WITH f AS (
     SELECT CAST(floor(x.ano_estreia / 10) * 10 AS INTEGER) AS decada, x.nota_ml_10, x.nota_imdb, x.gap
     FROM ${filmes} AS x
     WHERE x.nota_imdb IS NOT NULL AND x.n_ml >= ${min_ml} AND x.votos_imdb >= ${min_imdb}
+      AND x.tipo_imdb IN ${tipos}
       AND x.ano_estreia IS NOT NULL
 ),
 r AS (

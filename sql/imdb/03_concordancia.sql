@@ -14,11 +14,15 @@
 -- MovieLens e ${min_imdb} votos no IMDb. Com poucas avaliações a média é muito instável.
 -- O 07_imdb.py corre esta query também com outros limiares (análise de sensibilidade).
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}
 WITH f AS (
     SELECT nota_ml_10, nota_imdb, gap
     FROM ${filmes}
     WHERE nota_imdb IS NOT NULL AND n_ml >= ${min_ml} AND votos_imdb >= ${min_imdb}
+      AND tipo_imdb IN ${tipos}
 ),
 r AS (
     SELECT nota_ml_10, nota_imdb, gap,

@@ -5,11 +5,15 @@
 -- ("(no genres listed)") ficam de fora. Para cada género: gap médio com IC 95%, Pearson e
 -- Spearman (posições calculadas dentro do género, por isso o PARTITION BY genero).
 --
--- Parâmetros: ${filmes}, ${min_ml}, ${min_imdb}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${filmes}, ${tipos}, ${min_ml}, ${min_imdb}
 WITH f AS (
     SELECT unnest(generos_ml) AS genero, nota_ml_10, nota_imdb, gap
     FROM ${filmes}
     WHERE nota_imdb IS NOT NULL AND n_ml >= ${min_ml} AND votos_imdb >= ${min_imdb}
+      AND tipo_imdb IN ${tipos}
 ),
 r AS (
     SELECT genero, nota_ml_10, nota_imdb, gap,

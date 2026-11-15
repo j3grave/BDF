@@ -7,7 +7,10 @@
 -- Diferenças para o DuckDB: "timestamp" entre aspas; posição média nos empates com
 -- CAST(... AS double) / 2.
 --
--- Parâmetros: ${ratings}, ${filmes}, ${flag_bots}, ${min_seg}, ${min_imdb}, ${corte_era}
+-- Tipo de título: só os tipos de ${tipos} (config.yaml, imdb.tipos_titulo; por omissão só 'movie').
+-- Séries, episódios, curtas e vídeos ficam de fora (ver 02_ligacao_tipos.sql).
+--
+-- Parâmetros: ${ratings}, ${filmes}, ${tipos}, ${flag_bots}, ${min_seg}, ${min_imdb}, ${corte_era}
 WITH u AS (
     SELECT r.userid, COUNT(*) AS total, MIN(r."timestamp") AS primeiro_ts
     FROM ${ratings} AS r
@@ -51,6 +54,7 @@ elegiveis AS (
     FROM por_filme AS p
     JOIN ${filmes} AS f ON f.movieid = p.movieid
     WHERE p.n >= ${min_seg} AND f.nota_imdb IS NOT NULL AND f.votos_imdb >= ${min_imdb}
+      AND f.tipo_imdb IN ${tipos}
 ),
 comuns AS (
     SELECT e.tipo, e.movieid
