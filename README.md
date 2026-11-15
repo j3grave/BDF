@@ -39,8 +39,11 @@ O projeto explora ferramentas modernas de análise de dados local — formato **
 | `tags.csv` | Etiquetas livres atribuídas pelos utilizadores |
 | `links.csv` | Identificadores IMDb e TMDb de cada filme |
 
-Os dados **não estão incluídos no repositório**: o notebook descarrega-os automaticamente de
-[GroupLens](https://grouplens.org/datasets/movielens/) na primeira execução.
+O pipeline em scripts funciona também com o **MovieLens 1M** (1 000 209 avaliações, formato
+`.dat`) e o **MovieLens 32M** (32 milhões de avaliações): ver [Pipeline local](#pipeline-local).
+
+Os dados **não estão incluídos no repositório**: o notebook e o pipeline descarregam-nos
+automaticamente de [GroupLens](https://grouplens.org/datasets/movielens/) na primeira execução.
 
 ## Como executar
 
@@ -65,13 +68,26 @@ jupyter lab                      # ou abrir o notebook no VS Code
 
 ## Estrutura do repositório
 
+O repositório tem duas partes: os notebooks do lab e um pipeline em scripts, que leva o MovieLens
+do download até ao Athena na AWS.
+
 ```
 BDF/
-├── Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb   # notebook principal
+├── Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb   # notebook principal do lab
+├── Lab_..._v1_3.ipynb, Lab_..._v2.ipynb                    # notebook do Luís (análises e bots)
+├── run_pipeline.py                                        # ponto de entrada do pipeline
+├── config.yaml                                            # dataset por omissão e secção aws
+├── scripts/                                               # um script por passo (ver "Pipeline local")
+├── sql/                                                   # queries DuckDB e Athena
+├── docs/                                                  # validação das queries do Luís e revisão
+├── reports/                                               # manifestos da preparação para a cloud
+├── results/                                               # resultados leves (CSV, PNG, .md)
 ├── requirements.txt                                       # dependências Python
-├── .gitignore                                             # exclui dados e ficheiros gerados
+├── .gitignore                                             # exclui dados, credenciais e ficheiros gerados
 └── README.md
 ```
+
+A estrutura detalhada do pipeline está em [Estrutura de pastas](#estrutura-de-pastas).
 
 Ao executar o notebook são criadas as pastas `ml-latest-small/` (CSV), `parquet/` e `output/`
 (base de dados `movielens.duckdb`), que não são versionadas.
@@ -84,15 +100,15 @@ e `32m` (32 milhões).
 
 ### Ambiente
 
-Requer **Python 3.10 ou superior** (recomenda-se 3.12). O limite vem do `polars>=1.37`, que não
+Requer **Python 3.10 ou superior** (recomenda-se 3.12 ou 3.13). O limite vem do `polars>=1.37`, que não
 instala em Python 3.9; o DuckDB e o PyYAML aceitam versões mais antigas. Com 3.10 ou 3.11 a instalação
 funciona, mas o pip escolhe versões um pouco mais antigas de numpy, pandas, matplotlib e pyarrow,
 porque as mais recentes já exigem 3.11 ou 3.12.
 
 Versão testada: **Python 3.13** (3.13.18, Homebrew, macOS). Num ambiente limpo, o
-`pip install -r requirements.txt` instalou duckdb 2.0.0, polars 2.1.0, pandas 3.1.0, numpy 2.5.4,
-matplotlib 3.11.2 e pyarrow 26.0.0, e `python run_pipeline.py --dataset small` correu os quatro
-passos sem erros.
+`pip install -r requirements.txt` instalou duckdb 2.0.0, polars 2.1.0, pandas 3.1.1, numpy 2.5.4,
+matplotlib 3.11.2, pyarrow 26.0.1 e boto3 1.44.3, e `python run_pipeline.py --dataset small` correu
+os cinco passos sem erros (teste de 15/11/2026, num clone limpo).
 
 Antes de criar o ambiente, confirma a versão:
 
@@ -152,10 +168,11 @@ Cada script em `scripts/` também corre isolado, por exemplo `python scripts/02_
 | `parquet` | `scripts/02_to_parquet.py` | `COPY` do DuckDB para Parquet sem partição e `ratings` particionado por ano (`PARTITION_BY year`, ano em UTC). Regista os tamanhos do CSV e do Parquet. |
 | `benchmark` | `scripts/03_benchmark.py` | Corre cada query de `sql/` 3 vezes sobre os dois formatos de Parquet e regista a mediana do tempo e o n.º de linhas. |
 | `eda` | `scripts/04_eda.py` | Análise exploratória com agregações no DuckDB: indicadores, qualidade das tabelas, 10 figuras (paleta NOVA IMS) e relatório em Markdown. |
+| `analises` | `scripts/05_analises.py` | Corre as 16 queries de `sql/analise/` (queries do notebook do Luís, revistas, e a deteção de bots) e grava um CSV por query em `results/<dataset>/analises/`. Verifica a qualidade e a integridade dos dados e compara os totais com o `04_eda.py`; se alguma verificação falhar, o pipeline pára. Ver [Análises e deteção de bots](#análises-e-deteção-de-bots). |
 
 Nas queries de `sql/`, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet. Os dois
-formatos têm as mesmas colunas, incluindo `year`. `10_flag_bots.sql` é um esqueleto e é ignorado
-enquanto só tiver comentários.
+formatos têm as mesmas colunas, incluindo `year`. `sql/10_flag_bots.sql` é só um esqueleto e é
+ignorado pelo benchmark; a deteção de bots está em `sql/analise/10_flag_bots.sql`.
 
 ### Estrutura de pastas
 
@@ -169,15 +186,20 @@ BDF/
 │   ├── 02_to_parquet.py
 │   ├── 03_benchmark.py
 │   ├── 04_eda.py
+│   ├── 05_analises.py          # análises do Luís e deteção de bots (passo analises)
+│   ├── 06_coordenacao.py       # coordenação entre contas (corre à mão, fora do pipeline)
 │   ├── cloud_pipeline.py       # fase 2: passo cloud (upload, catálogo e benchmark num só comando)
 │   ├── prepare_cloud.py        # fase 2: ficheiros para o S3 (ver "Preparação para a cloud")
 │   ├── athena_common.py        # fase 2: opções AWS e cliente mínimo do Athena
 │   ├── athena_setup.py         # fase 2: DDL no Glue Data Catalog e validação
 │   └── athena_benchmark.py     # fase 2: benchmark DuckDB vs Athena
-├── sql/                        # 01–05: perguntas de análise e query temporal; 10: bots
+├── sql/                        # 01–05: perguntas de análise e query temporal; 10: esqueleto
+│   ├── analise/                # 16 queries do passo analises (DuckDB), incluindo 10_flag_bots
 │   ├── athena/ddl/             # fase 2: CREATE TABLE para o Athena
 │   ├── athena/queries/         # fase 2: queries 01–06 no dialeto do Athena (Trino)
+│   ├── athena/analise/         # as 16 queries de sql/analise/ no dialeto do Athena
 │   └── cloud/                  # fase 2: queries extra no dialeto DuckDB (06)
+├── docs/                       # validação das queries do Luís e revisão da fase 2
 ├── data/<dataset>/             # não versionado; pode ser um symlink (ver abaixo)
 │   ├── raw/                    # zip e ficheiros originais
 │   ├── csv/                    # CSV normalizados
@@ -189,7 +211,9 @@ BDF/
     ├── pipeline_runs.csv       # tempo de cada passo
     ├── benchmarks.csv          # dataset, query, formato, mediana do tempo, n.º de linhas
     ├── cloud_benchmarks.csv    # fase 2: DuckDB vs Athena (tempo, MB lidos, n.º de linhas)
-    └── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
+    ├── <dataset>/eda/          # figuras PNG, eda_indicadores.csv, eda_resumo_tabelas.csv, eda_relatorio.md
+    ├── <dataset>/analises/     # um CSV por query, analises_relatorio.md e athena_emulado/
+    └── <dataset>/bots_coordenacao/   # resultados do 06_coordenacao.py
 ```
 
 O dataset 32M ocupa cerca de 1.2 GB depois de descarregado e normalizado (zip, CSV), mais o Parquet.
@@ -202,6 +226,58 @@ onde os dados já foram descarregados e convertidos. Assim não é preciso repet
 mkdir -p data
 ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
 ```
+
+## Análises e deteção de bots
+
+> **Provisório:** as regras de deteção de bots e o teste de coordenação ainda estão a ser
+> validados pelo Luís. Os números abaixo não são resultados finais.
+
+### Passo `analises` (`scripts/05_analises.py`)
+
+As queries vêm do notebook do Luís (células 108, 109 e 112). Foram extraídas para `sql/analise/` e,
+quando foi preciso, corrigidas: fuso horário, faixas de atividade e o último ano incompleto. O
+relatório completo está em [`docs/validacao_queries_colega.md`](docs/validacao_queries_colega.md).
+Cada query tem uma versão Athena com o mesmo nome em `sql/athena/analise/`.
+
+```bash
+python scripts/05_analises.py --dataset small                  # o mesmo que o passo analises
+python scripts/05_analises.py --dataset 1m --fonte csv         # ler os CSV em vez do Parquet
+python scripts/05_analises.py --dataset small --emular-athena  # testar também as versões Athena
+```
+
+Com `--emular-athena`, as versões Athena correm no DuckDB, com macros que imitam as funções do
+Trino, e o resultado de cada uma é comparado com o da versão DuckDB. Isto valida a lógica, mas
+não a sintaxe do Trino: essa só se confirma no Athena.
+
+**Deteção de bots** (`sql/analise/10_flag_bots.sql`). A regra original sinalizava sobretudo o
+registo de utilizadores novos: 34% de suspeitos no small e 47% no 1M. Foi substituída por duas regras:
+
+- **regra A:** ritmo sustentado depois das primeiras 24 h, acima do quantil p99,9;
+- **regra B:** registo extremo, com pelo menos 100 eventos e um intervalo mediano de 2 s ou menos.
+
+Com estas regras, os suspeitos são 0,33% no small e 0,10% no 1M. As submissões em lote (10 ou mais
+avaliações no mesmo segundo) são contadas à parte e não contam como bots.
+
+### Coordenação entre contas (`scripts/06_coordenacao.py`)
+
+Corre à mão, fora do `run_pipeline.py`, porque é demorado no 32M. Procura rajadas: várias contas a
+dar a mesma nota extrema ao mesmo filme na mesma hora, longe da média do filme. Compara o n.º real
+de rajadas com uma linha de base em que os timestamps são baralhados dentro de cada filme.
+
+```bash
+python scripts/06_coordenacao.py --dataset 1m
+python scripts/06_coordenacao.py --dataset 32m --repeticoes 200 --memoria 12GB
+```
+
+Escreve em `results/<dataset>/bots_coordenacao/` as rajadas, a linha de base, o teste (valor-p
+empírico com Bonferroni), as 10 rajadas mais fortes conta a conta e o `coordenacao_relatorio.md`.
+Conclusão atual, a validar:
+
+- **1M:** não há mais rajadas do que na linha de base. As mais fortes são de contas novas, no pico
+  de registos de 20 e 21/11/2000.
+- **32M:** há mais rajadas do que na linha de base, mas o excesso está todo antes da escala de
+  meias estrelas (fevereiro de 2003) e explica-se pela mudança de escala, não por coordenação.
+  Com 200 permutações, nenhuma comparação pode passar a correção de Bonferroni.
 
 ## Fase cloud (AWS Academy Learner Lab)
 
@@ -374,7 +450,12 @@ CSV, que leem 877 MB cada. A 5 USD por TB, custa cerca de 0,06 USD.
 | [Polars](https://pola.rs/) | DataFrames em Python, modos *eager* e *lazy* |
 | [Apache Parquet](https://parquet.apache.org/) | Formato colunar comprimido em disco |
 | [Apache Arrow](https://arrow.apache.org/) | Formato colunar em memória, partilhado sem cópia entre Polars e DuckDB |
+| [pandas](https://pandas.pydata.org/) | Tabelas pequenas já agregadas pelo DuckDB (verificações, relatórios e figuras) |
 | [Matplotlib](https://matplotlib.org/) | Visualização |
+| [Amazon S3](https://aws.amazon.com/s3/) | Armazenamento dos ficheiros na cloud (fase 2) |
+| [AWS Glue Data Catalog](https://aws.amazon.com/glue/) | Catálogo das tabelas (fase 2) |
+| [Amazon Athena](https://aws.amazon.com/athena/) | Motor SQL serverless (Trino) sobre o S3 (fase 2) |
+| [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) | SDK da AWS em Python: upload, catálogo e queries (fase 2) |
 
 ## Equipa
 
