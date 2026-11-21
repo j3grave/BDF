@@ -5,8 +5,8 @@ dataset: small          # small | 1m | 32m
 data_dir: data          # downloads, CSV normalizados e Parquet: data/<dataset>/...
 results_dir: results    # tamanhos, tempos e benchmarks
 
-# Fase 2 (passo cloud: python run_pipeline.py --dataset small --steps cloud).
-# Este dataset (acima) é também o que os scripts da fase 2 usam por omissão.
+# Bloco cloud (passo cloud: python run_pipeline.py --dataset small --steps cloud).
+# Este dataset (acima) é também o que os scripts do bloco cloud usam por omissão.
 # As credenciais NUNCA ficam aqui (vão para ~/.aws/credentials).
 # O AWS Academy Learner Lab só permite us-east-1 e us-west-2.
 #

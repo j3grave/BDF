@@ -1,5 +1,5 @@
 """
-athena_setup.py - Fase 2: criar as tabelas no Glue Data Catalog (via Athena) e validá-las.
+07_athena_setup.py - Bloco cloud, passo 3 de 4: criar as tabelas no Glue Data Catalog (via Athena) e validá-las.
 
 Objetivo:
     Correr o DDL de sql/athena/ddl/ para registar no Glue Data Catalog a base de dados
@@ -12,7 +12,7 @@ Objetivo:
 
 Entradas:
     sql/athena/ddl/*.sql                 DDL com os marcadores ${database}, ${bucket} e ${pasta}
-    data/cloud/<pasta>/                  criado pelo prepare_cloud.py (para comparar schemas e contagens)
+    data/cloud/<pasta>/                  criado pelo 05_prepare_cloud.py (para comparar schemas e contagens)
     config.yaml (secção aws)             região e buckets (ou as opções da linha de comandos;
                                          se ficarem a null, derivados do ID da conta)
 
@@ -21,9 +21,9 @@ Saídas:
     Termina com erro se o DDL não coincidir com os ficheiros ou se alguma contagem falhar.
 
 Como correr:
-    python scripts/athena_setup.py --dry-run                     sem AWS: verifica o DDL e mostra-o
-    python scripts/athena_setup.py --dataset small --recriar     apaga e recria as tabelas
-    python scripts/athena_setup.py --bucket-dados X --bucket-resultados Y
+    python scripts/07_athena_setup.py --dry-run                     sem AWS: verifica o DDL e mostra-o
+    python scripts/07_athena_setup.py --dataset small --recriar     apaga e recria as tabelas
+    python scripts/07_athena_setup.py --bucket-dados X --bucket-resultados Y
     (por omissão usa o dataset do config.yaml; apagar uma tabela EXTERNAL não apaga os dados no S3)
     Normalmente corre dentro do passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
@@ -33,9 +33,9 @@ import sys
 
 import duckdb
 
-from athena_common import ATHENA_SQL, Athena, AthenaError, add_aws_args, aws_settings, read_sql, resolve_buckets
+from athena_common import (ATHENA_SQL, ATHENA_TYPES, Athena, AthenaError, add_aws_args, aws_settings, count_of,
+                           counts_by_year, read_sql, resolve_buckets, schema_of)
 from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config
-from prepare_cloud import ATHENA_TYPES, count_of, counts_by_year, schema_of
 
 # Grupos: 1 = nome da tabela, 2 = colunas, 3 = colunas de partição (se existirem)
 RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
@@ -189,7 +189,7 @@ def main():
 
     if not cloud_dir.exists():
         sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. '
-                 f"Corre primeiro: python scripts/prepare_cloud.py --dataset {cfg['dataset']}")
+                 f"Corre primeiro: python scripts/05_prepare_cloud.py --dataset {cfg['dataset']}")
     if not args.dry_run:
         resolve_buckets(aws)
 

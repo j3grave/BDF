@@ -1,8 +1,8 @@
 """
-athena_common.py - Configuração e funções partilhadas pelos scripts da fase 2 que usam o Athena.
+athena_common.py - Configuração e funções partilhadas pelos scripts do bloco cloud.
 
 Objetivo:
-    Reunir num só sítio o que o athena_setup.py e o athena_benchmark.py usam: as opções
+    Reunir num só sítio o que o 07_athena_setup.py e o 08_athena_benchmark.py usam: as opções
     da linha de comandos da AWS (região, buckets), a leitura dos .sql de sql/athena/ e
     uma pequena classe que submete uma query ao Athena, espera que termine e devolve as
     estatísticas (tempo e bytes lidos). Também resolve os nomes dos buckets: se não vierem
@@ -224,3 +224,34 @@ class Athena:
         if not linhas:
             return 0
         return len(linhas) - 1   # sem o cabeçalho
+
+
+# Funções DuckDB usadas pelo 05_prepare_cloud.py e pelo 07_athena_setup.py
+# Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
+ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
+
+
+def schema_of(con, glob, hive=False):
+    """Lista [(coluna, tipo), ...] dos ficheiros Parquet indicados pelo glob."""
+    rows = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{glob}', hive_partitioning={hive})").fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def count_of(con, glob, hive=False):
+    """Número de linhas dos ficheiros Parquet indicados pelo glob."""
+    return con.execute(f"SELECT count(*) FROM read_parquet('{glob}', hive_partitioning={hive})").fetchone()[0]
+
+
+def compression_of(con, glob):
+    """Compressões usadas nas colunas dos ficheiros Parquet (ex.: 'SNAPPY', 'ZSTD')."""
+    rows = con.execute(f"SELECT DISTINCT compression FROM parquet_metadata('{glob}') ORDER BY 1").fetchall()
+    return ', '.join(r[0] for r in rows)
+
+
+def counts_by_year(con, glob):
+    """Dicionário {ano: n.º de linhas} de uma pasta particionada por year=AAAA."""
+    rows = con.execute(f"""
+        SELECT year, count(*) FROM read_parquet('{glob}', hive_partitioning=true)
+        GROUP BY year ORDER BY year
+    """).fetchall()
+    return {int(ano): n for ano, n in rows}
