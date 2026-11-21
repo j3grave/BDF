@@ -93,7 +93,6 @@ def ensure_bucket(s3, bucket, region):
         if codigo not in ('404', 'NoSuchBucket'):
             raise
     # Em us-east-1 a API não aceita LocationConstraint; nas outras regiões é obrigatório.
-    # Montamos os argumentos num dicionário e passamo-los com ** (cada chave vira um argumento).
     kwargs = {'Bucket': bucket}
     if region != 'us-east-1':
         kwargs['CreateBucketConfiguration'] = {'LocationConstraint': region}

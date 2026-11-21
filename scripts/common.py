@@ -75,7 +75,6 @@ def load_config(dataset=None):
 
 def parse_args(description):
     """Lê a opção --dataset da linha de comandos (comum a todos os scripts)."""
-    # RawDescriptionHelpFormatter mostra o cabeçalho do script no --help tal como está escrito
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
@@ -138,7 +137,6 @@ def append_row(csv_path, row):
                 linha_completa[coluna] = row.get(coluna, '')
             row = linha_completa
 
-    # Abrir em modo 'a' (append) acrescenta no fim, sem apagar as execuções anteriores
     new = not csv_path.exists()
     with csv_path.open('a', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=list(row))

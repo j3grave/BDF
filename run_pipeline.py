@@ -31,9 +31,7 @@ import sys
 import time
 from pathlib import Path
 
-# Versão mínima de Python: o polars>=1.37 do requirements.txt não instala abaixo do 3.10.
-# Verificamos já aqui, antes de importar o resto, para o erro ser claro em vez de um
-# ImportError ou SyntaxError difícil de perceber mais à frente.
+# O polars>=1.37 não instala abaixo do 3.10: verifica-se já aqui, para o erro ser claro.
 PYTHON_MINIMO = (3, 10)
 if sys.version_info < PYTHON_MINIMO:
     sys.exit(f'Erro: este pipeline requer Python {PYTHON_MINIMO[0]}.{PYTHON_MINIMO[1]} ou superior, '
@@ -41,8 +39,7 @@ if sys.version_info < PYTHON_MINIMO:
              'Cria o ambiente com uma versão mais recente, por exemplo "python3.12 -m venv .venv", '
              'e vê a secção "Ambiente" do README.')
 
-# O common.py está na pasta scripts/. Acrescentamo-la à lista de pastas onde o Python
-# procura módulos, para o "from common import ..." funcionar a partir da raiz.
+# O common.py está em scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts'))
 from common import DATASETS, ROOT, append_row, load_config, now  # noqa: E402
 
@@ -74,9 +71,8 @@ def main():
     cfg = load_config(args.dataset)
 
     for step in args.steps:
-        # Cada passo corre num processo Python separado (o mesmo Python deste script,
-        # sys.executable), tal como se fosse chamado à mão no terminal.
-        # Se um passo falhar, o pipeline pára, em vez de continuar com dados incompletos.
+        # Cada passo corre num processo separado, como se fosse chamado à mão no terminal.
+        # Se um passo falhar, o pipeline pára, para não continuar com dados incompletos.
         comando = [sys.executable, str(ROOT / STEPS[step]), '--dataset', cfg['dataset']]
         if step == 'cloud':
             if args.bucket_dados:
@@ -92,9 +88,7 @@ def main():
 
         append_row(cfg['paths']['results'] / 'pipeline_runs.csv',
                    {'run_at': now(), 'dataset': cfg['dataset'], 'step': step, 'seconds': seconds})
-        # flush=True escreve já no ecrã, para a linha não aparecer fora de ordem
-        # em relação ao que o passo imprimiu. É o tempo total do processo (arranque do
-        # Python, imports e trabalho), o mesmo que fica em pipeline_runs.csv.
+        # Inclui o arranque do Python e os imports, como no pipeline_runs.csv
         print(f'[{step}] tempo total do passo (processo completo): {seconds:.2f} s\n', flush=True)
 
 

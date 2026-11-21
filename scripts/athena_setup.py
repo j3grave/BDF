@@ -37,15 +37,9 @@ from athena_common import ATHENA_SQL, Athena, AthenaError, add_aws_args, aws_set
 from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config
 from prepare_cloud import ATHENA_TYPES, count_of, counts_by_year, schema_of
 
-# Apanha o nome da tabela, a lista de colunas e (se existir) a lista de partições de um CREATE TABLE.
-# Leitura da expressão regular (regex):
-#   \s+  um ou mais espaços (ou mudanças de linha)
-#   (\w+)  grupo 1: o nome da tabela (letras, algarismos e _)
-#   \((.*?)\)  grupo 2: tudo o que está entre os primeiros parênteses (a lista de colunas)
-#   (?:\s*PARTITIONED\s+BY\s*\((.*?)\))?  grupo 3, opcional: as colunas de partição
-# IGNORECASE: maiúsculas ou minúsculas; DOTALL: o "." também apanha mudanças de linha.
-RE_CREATE =re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
-                       r'(?:\s*PARTITIONED\s+BY\s*\((.*?)\))?', re.IGNORECASE | re.DOTALL)
+# Grupos: 1 = nome da tabela, 2 = colunas, 3 = colunas de partição (se existirem)
+RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
+                        r'(?:\s*PARTITIONED\s+BY\s*\((.*?)\))?', re.IGNORECASE | re.DOTALL)
 
 
 def parse_args():
@@ -63,7 +57,7 @@ def parse_columns(texto):
     """'userid int, `timestamp` bigint' -> [('userid', 'int'), ('timestamp', 'bigint')]"""
     colunas = []
     for parte in texto.split(','):          # uma parte por coluna: "userid int"
-        nome, tipo = parte.split()          # separa pelos espaços: nome e tipo
+        nome, tipo = parte.split()
         # Tira os backticks (`timestamp`) e passa tudo a minúsculas, como no catálogo do Athena
         colunas.append((nome.strip('`').lower(), tipo.lower()))
     return colunas
