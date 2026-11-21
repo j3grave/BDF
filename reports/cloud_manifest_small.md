@@ -1,7 +1,7 @@
 # Manifesto para a cloud: ml-latest-small
 
 - Dataset: `small`
-- Gerado em: 2026-11-21T15:12:36 (DuckDB 1.5.6, 0.3 s)
+- Gerado em: 2026-11-21T16:58:12 (DuckDB 1.5.6, 0.1 s)
 - Pasta local: `data/cloud/ml-latest-small/` (origem: `data/small/parquet/` e `data/small/csv/ratings.csv`)
 - Upload: `python run_pipeline.py --dataset small --steps cloud` (envia para `s3://<bucket-dados>/ml-latest-small/`)
 - Verificações: contagens iguais à origem, soma das partições igual a `ratings`, contagens por ano iguais ao `ratings_by_year` da fase 1, tipos iguais à origem, `year` só no nome das pastas, compressão zstd e só ficheiros da tabela em cada pasta. Todas passaram.
@@ -21,9 +21,9 @@
 
 | Tabela | Origem (fase 1) | Compressão origem | MB origem | MB cloud (zstd) | Variação |
 |---|---|---|---:|---:|---:|
-| ratings | `data/small/parquet/ratings.parquet` | SNAPPY | 0.69 | 0.50 | -27.0 % |
-| ratings_part | `data/small/parquet/ratings_by_year/` | SNAPPY | 0.77 | 0.50 | -35.3 % |
-| movies | `data/small/parquet/movies.parquet` | SNAPPY | 0.25 | 0.16 | -34.2 % |
+| ratings | `data/small/parquet/ratings.parquet` | SNAPPY | 0.69 | 0.50 | -26.9 % |
+| ratings_part | `data/small/parquet/ratings_by_year/` | SNAPPY | 0.77 | 0.50 | -35.1 % |
+| movies | `data/small/parquet/movies.parquet` | SNAPPY | 0.25 | 0.16 | -33.4 % |
 
 O `ratings_csv` é uma cópia byte a byte do CSV, sem compressão.
 
