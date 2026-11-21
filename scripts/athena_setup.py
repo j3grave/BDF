@@ -85,57 +85,19 @@ def ddl_statements(params):
     return instrucoes
 
 
-# Tipos do IMDb que o MovieLens não tem: isAdult é booleano e genres é uma lista de textos
-TIPOS_ATHENA = dict(ATHENA_TYPES)
-TIPOS_ATHENA['BOOLEAN'] = 'boolean'
-TIPOS_ATHENA['VARCHAR[]'] = 'array<string>'
-
-# Tabelas do IMDb em TSV: colunas e tipos com que o Athena as lê (o TSV não tem tipos próprios).
-# No TSV, isadult é 0/1 (int) e genres é texto separado por vírgulas.
-COLUNAS_TSV_IMDB = {
-    'imdb_title_ratings_tsv': [('tconst', 'string'), ('averagerating', 'double'), ('numvotes', 'int')],
-    'imdb_title_basics_tsv': [('tconst', 'string'), ('titletype', 'string'), ('primarytitle', 'string'),
-                              ('originaltitle', 'string'), ('isadult', 'int'), ('startyear', 'int'),
-                              ('endyear', 'int'), ('runtimeminutes', 'int'), ('genres', 'string')],
-}
-
-
-def pasta_local(cloud_dir, table):
-    """Pasta local de uma tabela: data/cloud/<pasta>/<tabela>/, ou data/cloud/imdb/<tabela sem imdb_>/.
-
-    As tabelas do IMDb são as mesmas para todos os datasets, por isso ficam em data/cloud/imdb/
-    (e em s3://<bucket>/imdb/), com o nome sem o prefixo imdb_ (ex.: imdb_title_ratings -> title_ratings).
-    """
-    if table.startswith('imdb_'):
-        return ROOT / 'data' / 'cloud' / 'imdb' / table[len('imdb_'):]
-    return cloud_dir / table
-
-
 def local_schema(con, cloud_dir, table):
     """Colunas e tipos (no formato do Athena) dos ficheiros locais de uma tabela."""
-    if table in COLUNAS_TSV_IMDB:
-        return COLUNAS_TSV_IMDB[table]
-    pasta = pasta_local(cloud_dir, table)
     if table == 'ratings_csv':
         colunas = list(SCHEMAS['ratings'].items())     # tipos com que o CSV é lido no pipeline
     elif table == 'ratings_part':
-        colunas = schema_of(con, (pasta / '*' / '*.parquet').as_posix(), hive=False)
+        colunas = schema_of(con, (cloud_dir / table / '*' / '*.parquet').as_posix(), hive=False)
     else:
-        colunas = schema_of(con, (pasta / '*.parquet').as_posix())
-    return [(nome.lower(), TIPOS_ATHENA[tipo]) for nome, tipo in colunas]
+        colunas = schema_of(con, (cloud_dir / table / '*.parquet').as_posix())
+    return [(nome.lower(), ATHENA_TYPES[tipo]) for nome, tipo in colunas]
 
 
 def local_count(con, cloud_dir, table):
     """N.º de linhas dos ficheiros locais de uma tabela."""
-    if table in COLUNAS_TSV_IMDB:
-        # TSV.gz do IMDb, lido como no 07_imdb.py (sem aspas, \N = nulo, tudo como texto)
-        tsv = (pasta_local(cloud_dir, table) / '*.tsv.gz').as_posix()
-        return con.execute(f"""
-            SELECT count(*) FROM read_csv('{tsv}', delim='\\t', header=true, quote='', escape='',
-                                          nullstr='\\N', all_varchar=true)
-        """).fetchone()[0]
-    if table.startswith('imdb_'):
-        return count_of(con, (pasta_local(cloud_dir, table) / '*.parquet').as_posix())
     if table == 'ratings_csv':
         csv_file = (cloud_dir / table / 'ratings.csv').as_posix()
         return con.execute(f"""
@@ -152,7 +114,7 @@ def check_ddl(con, cloud_dir, instrucoes):
     problemas = []
     for ficheiro, table, sql in instrucoes:
         # Só os CREATE TABLE de tabelas que existem neste dataset
-        if table is None or not pasta_local(cloud_dir, table).exists():
+        if table is None or not (cloud_dir / table).exists():
             continue
         m = RE_CREATE.search(sql)
         # Colunas: as do DDL (grupo 2 da regex) têm de ser iguais às dos ficheiros
@@ -193,12 +155,11 @@ def main():
     # sabemos o bucket, por isso fica um texto de exemplo.
     params = {'database': aws['database'], 'pasta': aws['pasta'],
               'bucket': aws.get('bucket_dados') or '<bucket-dados>'}
-    # Só as tabelas que existem neste dataset (o 1M não tem tags nem links; o IMDb só se
-    # existir data/cloud/imdb/, criada pelo prepare_cloud_imdb.py)
+    # Só as tabelas que existem neste dataset (o 1M não tem tags nem links)
     instrucoes = []
     tabelas = []
     for ficheiro, tabela, sql in ddl_statements(params):
-        if tabela is None or pasta_local(cloud_dir, tabela).exists():
+        if tabela is None or (cloud_dir / tabela).exists():
             instrucoes.append((ficheiro, tabela, sql))
             if tabela:
                 tabelas.append(tabela)

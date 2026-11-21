@@ -9,8 +9,6 @@ Objetivo:
         c. cria os dois buckets, se ainda não existirem;
         d. envia data/cloud/<pasta>/ para s3://<bucket-dados>/<pasta>/, só os ficheiros novos
            ou com tamanho diferente (como o "aws s3 sync");
-        d2. se existir o IMDb (passo imdb), prepara data/cloud/imdb/ e envia-o para
-           s3://<bucket-dados>/imdb/ (a mesma pasta para os três datasets);
         e. corre o athena_setup.py --recriar (depois do upload, para o MSCK REPAIR TABLE
            ver as partições no S3) e valida as contagens;
         f. corre o athena_benchmark.py, só se a validação do setup tiver passado.
@@ -25,8 +23,7 @@ Entradas:
 
 Saídas:
     Buckets e objetos no S3, base de dados e tabelas no Glue Data Catalog,
-    reports/cloud_manifest_<dataset>.md (se o prepare_cloud.py correr),
-    reports/cloud_manifest_imdb.md (se o prepare_cloud_imdb.py correr) e
+    reports/cloud_manifest_<dataset>.md (se o prepare_cloud.py correr) e
     results/cloud_benchmarks.csv. O ID da conta só aparece no ecrã.
 
 Como correr:
@@ -73,24 +70,6 @@ def prepare_needed(ds, cloud_dir, manifest, pq_dir, csv_file):
     if mais_recentes:
         return (f'{len(mais_recentes)} ficheiro(s) de data/{ds}/ mais recentes do que o manifesto '
                 f'(ex.: {mais_recentes[0].name})')
-    return None
-
-
-def imdb_precisa_de_preparar():
-    """Motivo para (re)correr o prepare_cloud_imdb.py, ou None se data/cloud/imdb/ estiver atualizada.
-
-    Mesma lógica do prepare_needed: o manifesto só é escrito se as verificações passarem, e
-    tem de ser mais recente do que todos os ficheiros do IMDb em data/imdb/.
-    """
-    manifesto = ROOT / 'reports' / 'cloud_manifest_imdb.md'
-    if not (ROOT / 'data' / 'cloud' / 'imdb').exists():
-        return 'não existe data/cloud/imdb'
-    if not manifesto.exists():
-        return 'não existe reports/cloud_manifest_imdb.md'
-    origens = [f for f in (ROOT / 'data' / 'imdb').rglob('*') if f.is_file()]
-    for f in origens:
-        if f.stat().st_mtime > manifesto.stat().st_mtime:
-            return f'{f.name} é mais recente do que o manifesto'
     return None
 
 
@@ -238,17 +217,6 @@ def main():
     # d. Upload
     print(f'[cloud] d. upload de data/cloud/{pasta}/ para s3://{aws["bucket_dados"]}/{pasta}/', flush=True)
     sync_to_s3(s3, cloud_dir, aws['bucket_dados'], pasta)
-
-    # d2. IMDb (só se o passo imdb já tiver corrido): mesma pasta imdb/ para todos os datasets
-    if (ROOT / 'data' / 'imdb' / 'parquet').exists():
-        motivo_imdb = imdb_precisa_de_preparar()
-        if motivo_imdb:
-            print(f'[cloud] d2. a preparar data/cloud/imdb/: {motivo_imdb}', flush=True)
-            run_script('prepare_cloud_imdb.py', [])
-        print(f'[cloud] d2. upload de data/cloud/imdb/ para s3://{aws["bucket_dados"]}/imdb/', flush=True)
-        sync_to_s3(s3, ROOT / 'data' / 'cloud' / 'imdb', aws['bucket_dados'], 'imdb')
-    else:
-        print('[cloud] d2. sem IMDb em data/imdb/parquet/ (passo imdb não corrido): salta o IMDb')
 
     # e. e f. Os nomes dos buckets já resolvidos passam explicitamente, para os dois scripts
     # usarem exatamente os mesmos (e não voltarem a perguntar o ID da conta).

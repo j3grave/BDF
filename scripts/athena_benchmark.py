@@ -65,19 +65,6 @@ ATHENA_SOURCES = {
                 'movies': 'movies'},
     'parquet_part': {'ratings': 'ratings_part', 'movies': 'movies'},
 }
-# Fase 3 (IMDb): no formato csv as tabelas do IMDb em TSV.gz; nos outros, em Parquet.
-# O links só existe em Parquet (é pequeno e não é o que se está a comparar).
-for _fmt in ATHENA_SOURCES:
-    ATHENA_SOURCES[_fmt]['links'] = 'links'
-    if _fmt == 'csv':
-        ATHENA_SOURCES[_fmt]['imdb_ratings'] = 'imdb_title_ratings_tsv'
-        ATHENA_SOURCES[_fmt]['imdb_basics'] = 'imdb_title_basics_tsv'
-    else:
-        ATHENA_SOURCES[_fmt]['imdb_ratings'] = 'imdb_title_ratings'
-        ATHENA_SOURCES[_fmt]['imdb_basics'] = 'imdb_title_basics'
-
-# Pasta local do IMDb preparado para a cloud (prepare_cloud_imdb.py)
-CLOUD_IMDB = ROOT / 'data' / 'cloud' / 'imdb'
 
 
 def parse_args():
@@ -101,30 +88,11 @@ def duckdb_sources(cloud_dir):
     year = 'year(to_timestamp("timestamp")) AS year'
     ler_csv = (f"read_csv('{csv_file}', header=true, delim=',', quote='\"', escape='\"', "
                f"columns={duckdb_columns(SCHEMAS['ratings'])})")
-    fontes = {
+    return {
         'csv': {'ratings': f'(SELECT *, {year} FROM {ler_csv})', 'movies': movies},
         'parquet': {'ratings': f"(SELECT *, {year} FROM read_parquet('{flat}'))", 'movies': movies},
         'parquet_part': {'ratings': f"read_parquet('{part}', hive_partitioning=true)", 'movies': movies},
     }
-
-    # Fase 3 (IMDb): os mesmos ficheiros que vão para s3://<bucket>/imdb/
-    links = f"read_parquet('{(cloud_dir / 'links' / '*.parquet').as_posix()}')"
-    # TSV.gz lido como no 07_imdb.py: tudo como texto e os números convertidos depois
-    opcoes_tsv = "delim='\\t', header=true, quote='', escape='', nullstr='\\N', all_varchar=true"
-    tsv_ratings = (f"(SELECT tconst, CAST(averageRating AS DOUBLE) AS averageRating, CAST(numVotes AS INTEGER) AS numVotes "
-                   f"FROM read_csv('{(CLOUD_IMDB / 'title_ratings_tsv' / '*.tsv.gz').as_posix()}', {opcoes_tsv}))")
-    tsv_basics = f"read_csv('{(CLOUD_IMDB / 'title_basics_tsv' / '*.tsv.gz').as_posix()}', {opcoes_tsv})"
-    pq_ratings = f"read_parquet('{(CLOUD_IMDB / 'title_ratings' / '*.parquet').as_posix()}')"
-    pq_basics = f"read_parquet('{(CLOUD_IMDB / 'title_basics' / '*.parquet').as_posix()}')"
-    for fmt in fontes:
-        fontes[fmt]['links'] = links
-        if fmt == 'csv':
-            fontes[fmt]['imdb_ratings'] = tsv_ratings
-            fontes[fmt]['imdb_basics'] = tsv_basics
-        else:
-            fontes[fmt]['imdb_ratings'] = pq_ratings
-            fontes[fmt]['imdb_basics'] = pq_basics
-    return fontes
 
 
 def connect_duckdb():
@@ -134,12 +102,7 @@ def connect_duckdb():
     return con
 
 
-def imdb_disponivel(cloud_dir):
-    """True se houver IMDb preparado (data/cloud/imdb/) e links neste dataset (o 1M não tem)."""
-    return CLOUD_IMDB.exists() and (cloud_dir / 'links').exists()
-
-
-def load_queries(com_imdb):
+def load_queries():
     """Lista de (nome, sql_athena_template, sql_duckdb_template, formatos) para cada query."""
     queries = []
     for athena_file in sorted((ATHENA_SQL / 'queries').glob('*.sql')):
@@ -153,10 +116,6 @@ def load_queries(com_imdb):
         if duckdb_file is None:
             sys.exit(f'Erro: {athena_file.name} não tem versão DuckDB em sql/ nem em sql/cloud/')
         texto_athena = athena_file.read_text()
-        # Queries do IMDb (fase 3) só se o IMDb estiver preparado para este dataset
-        if '${imdb_' in texto_athena and not com_imdb:
-            print(f'  {nome}: salta (sem data/cloud/imdb/ ou sem links neste dataset)')
-            continue
         # Queries que só usam movies não dependem do formato dos ratings: correm uma vez
         if '${ratings}' in texto_athena:
             formatos = FORMATOS_RATINGS
@@ -208,7 +167,7 @@ def main():
         resolve_buckets(aws)
         athena = Athena(aws)
 
-    queries = load_queries(imdb_disponivel(cloud_dir))
+    queries = load_queries()
     fontes_duckdb = duckdb_sources(cloud_dir)
     csv_resultados = cfg['paths']['results'] / 'cloud_benchmarks.csv'
     n_linhas = {}          # (query, formato, motor) -> n.º de linhas, para comparar os motores
