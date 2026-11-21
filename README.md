@@ -1,15 +1,14 @@
 # Big Data Foundations: pipeline MovieLens
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/j3grave/BDF/blob/main/Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb)
-
 Trabalho de grupo da unidade curricular Big Data Foundations, da Pós-Graduação em Enterprise Data
 Science & Analytics da NOVA IMS (2026).
 
-O projeto tem duas partes:
+O projeto é um pipeline em scripts que leva o MovieLens do download até ao Amazon Athena e mede,
+em cada etapa, o efeito do formato e da escala (100 mil, 1 milhão e 32 milhões de avaliações).
 
-1. Um notebook de laboratório que usa Parquet, DuckDB, Polars e Arrow sobre o MovieLens.
-2. Um pipeline em scripts que leva o MovieLens do download até ao Amazon Athena e mede, em cada
-   etapa, o efeito do formato e da escala (100 mil, 1 milhão e 32 milhões de avaliações).
+Os notebooks do lab (Parquet, DuckDB, Polars e Arrow) e os documentos de trabalho do grupo
+(resumo do projeto, próximos passos e revisão da fase 2) estão arquivados no branch
+`arquivo/docs-projeto`.
 
 ## Dados
 
@@ -28,15 +27,13 @@ O MovieLens, do [GroupLens](https://grouplens.org/datasets/movielens/), em três
 | `tags` | Etiquetas livres dos utilizadores |
 | `links` | Identificadores IMDb e TMDb de cada filme |
 
-Os dados não estão no repositório. O notebook e o pipeline descarregam-nos na primeira execução.
+Os dados não estão no repositório. O pipeline descarrega-os na primeira execução.
 Depois de descarregado e normalizado, o 32M ocupa cerca de 1,2 GB, mais o Parquet.
 
 ## Estrutura do repositório
 
 ```
 BDF/
-├── Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb   # notebook do lab
-├── Lab_..._v1_3.ipynb, Lab_..._v2.ipynb                    # notebooks do Luís (análises e bots)
 ├── run_pipeline.py              # ponto de entrada do pipeline
 ├── config.yaml                  # dataset por omissão e secção aws
 ├── requirements.txt
@@ -80,9 +77,8 @@ Dentro de `results/`:
 
 ## Ambiente
 
-É preciso Python 3.10 ou superior, por causa do `polars>=1.37`. A versão testada é a 3.13: num
-clone limpo, a 15/11/2026, o `python run_pipeline.py --dataset small` correu os cinco passos sem
-erros.
+É preciso Python 3.9 ou superior. O pipeline foi testado com o 3.9 e o 3.13, com os mesmos
+resultados.
 
 ```bash
 git clone https://github.com/j3grave/BDF.git
@@ -92,10 +88,8 @@ source .venv/bin/activate         # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-No macOS, o `python3` do sistema (`/usr/bin/python3`) é o 3.9 e não serve. Instala outra versão
-(`brew install python@3.13` ou o instalador de python.org) e cria o ambiente com ela. Se já
-tiveres um `.venv` feito com o 3.9, apaga-o e cria-o de novo. Com conda:
-`conda create -n bdf python=3.13`, `conda activate bdf` e `pip install -r requirements.txt`.
+Com conda: `conda create -n bdf python=3.13`, `conda activate bdf` e
+`pip install -r requirements.txt`.
 
 ## Pipeline local
 
@@ -132,7 +126,8 @@ ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
 
 ### Passo `analises`
 
-As queries vêm do notebook do Luís (células 108, 109 e 112). Foram passadas para `sql/analise/` e
+As queries vêm do notebook do Luís (células 108, 109 e 112), arquivado no branch
+`arquivo/docs-projeto`. Foram passadas para `sql/analise/` e
 corrigidas onde foi preciso: fuso horário, faixas de atividade e último ano incompleto. O relatório
 dessa validação está arquivado no branch `arquivo/main-com-imdb`
 (`git show arquivo/main-com-imdb:docs/validacao_queries_colega.md`). Cada query tem uma versão
@@ -297,34 +292,12 @@ python scripts/athena_setup.py --dataset small --recriar
 python scripts/athena_benchmark.py --dataset small
 ```
 
-## Notebook do lab
-
-O notebook `Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1.ipynb` usa o `ml-latest-small`. Converte
-os CSV para Parquet e compara os tamanhos, consulta o Parquet com DuckDB, transforma os dados com
-Polars e passa-os ao DuckDB através do Arrow, sem cópia. Mostra também a leitura lazy do Polars
-(projection e filter pushdown), guarda uma base de dados DuckDB e faz a análise exploratória.
-
-Responde a quatro perguntas, cada uma em Polars e em SQL, e confirma que as duas dão o mesmo
-resultado:
-
-- Que géneros de filmes existem?
-- Quantos filmes há por género?
-- Como se distribuem as avaliações por utilizador?
-- Que filmes têm a média de avaliação mais alta?
-
-Para o correr no Colab, carrega no botão no topo desta página e faz "Runtime > Run all". A última
-célula descarrega um `.zip` com o Parquet e a base de dados. Localmente, com o ambiente ativo,
-corre `jupyter lab`. O notebook cria as pastas `ml-latest-small/`, `parquet/` e `output/`, que não
-são versionadas.
-
 ## Tecnologias
 
 | Ferramenta | Para quê |
 |---|---|
-| [DuckDB](https://duckdb.org/) | SQL analítico embebido: conversão para Parquet, queries e base de dados |
+| [DuckDB](https://duckdb.org/) | SQL analítico embebido: conversão para Parquet e queries |
 | [Apache Parquet](https://parquet.apache.org/) | Formato colunar comprimido em disco |
-| [Polars](https://pola.rs/) | DataFrames no notebook, em modo eager e lazy |
-| [Apache Arrow](https://arrow.apache.org/) | Formato colunar em memória, partilhado entre o Polars e o DuckDB |
 | [pandas](https://pandas.pydata.org/) e [Matplotlib](https://matplotlib.org/) | Tabelas já agregadas pelo DuckDB, relatórios e figuras |
 | [Amazon S3](https://aws.amazon.com/s3/) | Ficheiros na cloud |
 | [AWS Glue Data Catalog](https://aws.amazon.com/glue/) | Catálogo das tabelas |
@@ -346,5 +319,4 @@ são versionadas.
   ACM Transactions on Interactive Intelligent Systems (TiiS) 5, 4: 19:1–19:19.
   https://doi.org/10.1145/2827872
 - Raasveldt, M., & Mühleisen, H. (2019). *DuckDB: an Embeddable Analytical Database.* SIGMOD.
-- Documentação: [DuckDB](https://duckdb.org/docs/), [Polars](https://docs.pola.rs/),
-  [Apache Arrow](https://arrow.apache.org/docs/).
+- Documentação do [DuckDB](https://duckdb.org/docs/).
