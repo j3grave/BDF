@@ -1,6 +1,6 @@
 # Análise exploratória · MovieLens 32m
 
-Gerado por `scripts/04_analise.py` em 3.0 s.
+Gerado por `scripts/04_analise.py` em 2.3 s.
 
 ## Fontes
 
@@ -49,20 +49,20 @@ Gerado por `scripts/04_analise.py` em 3.0 s.
 
 | Tabela | Coluna | Linhas | Nulos | % nulos | Distintos (aprox.) |
 |---|---|---|---|---|---|
-| ratings | userId | 32000204 | 0 | 0.0 | 186412 |
-| ratings | movieId | 32000204 | 0 | 0.0 | 70323 |
-| ratings | rating | 32000204 | 0 | 0.0 | 11 |
-| ratings | timestamp | 32000204 | 0 | 0.0 | 26163818 |
-| movies | movieId | 87585 | 0 | 0.0 | 71783 |
-| movies | title | 87585 | 0 | 0.0 | 91480 |
-| movies | genres | 87585 | 0 | 0.0 | 1982 |
-| tags | userId | 2000072 | 0 | 0.0 | 14023 |
-| tags | movieId | 2000072 | 0 | 0.0 | 43102 |
-| tags | tag | 2000072 | 0 | 0.0 | 103410 |
-| tags | timestamp | 2000072 | 0 | 0.0 | 1157705 |
-| links | movieId | 87585 | 0 | 0.0 | 71783 |
-| links | imdbId | 87585 | 0 | 0.0 | 81591 |
-| links | tmdbId | 87585 | 124 | 0.142 | 98768 |
+| ratings | userId | 32000204 | 0 | 0.0 | 195461 |
+| ratings | movieId | 32000204 | 0 | 0.0 | 81074 |
+| ratings | rating | 32000204 | 0 | 0.0 | 10 |
+| ratings | timestamp | 32000204 | 0 | 0.0 | 25766058 |
+| movies | movieId | 87585 | 0 | 0.0 | 83624 |
+| movies | title | 87585 | 0 | 0.0 | 86636 |
+| movies | genres | 87585 | 0 | 0.0 | 1811 |
+| tags | userId | 2000072 | 0 | 0.0 | 15270 |
+| tags | movieId | 2000072 | 0 | 0.0 | 51367 |
+| tags | tag | 2000072 | 0 | 0.0 | 140771 |
+| tags | timestamp | 2000072 | 0 | 0.0 | 1271930 |
+| links | movieId | 87585 | 0 | 0.0 | 83624 |
+| links | imdbId | 87585 | 0 | 0.0 | 90516 |
+| links | tmdbId | 87585 | 124 | 0.142 | 88231 |
 
 ## Figuras
 
