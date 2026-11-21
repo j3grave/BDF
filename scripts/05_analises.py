@@ -3,7 +3,8 @@
 
 Objetivo:
     Correr as queries de sql/analise/ sobre um dataset e gravar o resultado de cada uma em
-    CSV. As queries vêm do notebook do Luís (células 108, 109 e 112), extraídas para ficheiros
+    CSV. As queries vêm do notebook do Luís (células 108, 109 e 112; arquivado no branch
+    arquivo/docs-projeto), extraídas para ficheiros
     .sql e corrigidas onde foi preciso (relatório no branch arquivo/main-com-imdb).
     Tal como no 04_eda.py, as agregações são feitas no DuckDB: o resultado vai diretamente do
     DuckDB para o CSV (COPY), sem passar pelo Python. Só os resultados pequenos (uma linha, ou
@@ -52,7 +53,6 @@ import argparse
 import math
 import re
 import time
-from pathlib import Path
 from string import Template
 
 import duckdb
