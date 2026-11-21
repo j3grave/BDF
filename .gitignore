@@ -44,7 +44,7 @@ credentials
 dados/
 lab_resultados.zip
 
-# Ficheiros comprimidos e dados do IMDb (já cobertos por data/, mas explícitos)
+# Ficheiros comprimidos (já cobertos por data/, mas explícitos)
 *.zip
 *.tsv
 *.tsv.gz

@@ -153,7 +153,7 @@ modificados 8 ficheiros:
 - 3 CSV globais a que se acrescentam linhas;
 - os tempos no `analises_relatorio.md` e no `analises_resumo.csv`;
 - o último dígito dos floats em `distribuicao.csv` e `grupos_atividade.csv` (ordem das somas
-  paralelas; já documentado em `docs/validacao_queries_colega.md`, 13.1);
+  paralelas; já documentado em `docs/validacao_queries_colega.md`, 13.1, hoje no branch `arquivo/main-com-imdb`);
 - o PNG `09_top_tags.png`.
 
 O `5e607be` acrescentou 5 corridas repetidas do small. Hoje o `results/pipeline_runs.csv` tem 36

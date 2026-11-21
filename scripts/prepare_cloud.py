@@ -20,7 +20,7 @@ Entradas:
 Saídas:
     data/cloud/<pasta>/ratings/ratings.parquet        ratings sem partição
     data/cloud/<pasta>/ratings_part/year=AAAA/*.parquet  ratings particionado por ano
-    data/cloud/<pasta>/movies/, tags/, links/         uma tabela por pasta (o 1M só tem movies)
+    data/cloud/<pasta>/movies/movies.parquet          movies
     data/cloud/<pasta>/ratings_csv/ratings.csv        cópia do CSV, byte a byte
     reports/cloud_manifest_<dataset>.md               manifesto (só se todas as verificações passarem)
     <pasta> é o nome da pasta do GroupLens: ml-latest-small, ml-1m ou ml-32m.
@@ -30,24 +30,19 @@ Como correr:
     python scripts/prepare_cloud.py               (por omissão usa o dataset do config.yaml)
     O envio para o S3 é feito pelo passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
-import argparse
 import shutil
 import sys
 import time
 
 import duckdb
 
-from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config, now, size_on_disk
+from common import ROOT, SCHEMAS, duckdb_columns, load_config, now, parse_args, size_on_disk
+
+# Tabelas que vão para a cloud. O tags e o links não são usados por nenhuma query do Athena.
+TABELAS_CLOUD = ['ratings', 'movies']
 
 # Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
 ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
-
-def parse_args():
-    """Lê a opção --dataset (small | 1m | 32m; por omissão, o do config.yaml, como nos outros passos)."""
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset', choices=list(DATASETS), help='dataset a preparar (sobrepõe o valor de config.yaml)')
-    return parser.parse_args()
 
 
 def mb(path):
@@ -119,10 +114,9 @@ def check_structure(cloud_dir, tables):
     return problemas
 
 
-def write_manifest(path, info):
-    """Escreve o manifesto em Markdown a partir do dicionário montado no main()."""
+def seccao_cabecalho(L, info):
+    """Título, dados gerais do dataset e lista das verificações feitas."""
     ds, pasta = info['dataset'], info['pasta']
-    L = []
     L.append(f'# Manifesto para a cloud: {pasta}')
     L.append('')
     L.append(f'- Dataset: `{ds}`')
@@ -138,6 +132,9 @@ def write_manifest(path, info):
              'Assim os dois motores leem os mesmos bytes.')
     L.append('')
 
+
+def seccao_tabelas(L, info):
+    """Tabela com o caminho, o n.º de ficheiros, o tamanho e as linhas de cada tabela."""
     L.append('## Tabelas')
     L.append('')
     L.append('| Tabela | Caminho | Ficheiros | Tamanho (MB) | Linhas | Compressão |')
@@ -147,6 +144,9 @@ def write_manifest(path, info):
                  f'{t["linhas"]:,} | {t["compressao"]} |'.replace(',', ' '))
     L.append('')
 
+
+def seccao_compressao(L, info):
+    """Tamanho de cada tabela na fase 1 (snappy) e na cloud (zstd)."""
     L.append('## Compressão: fase 1 vs cloud')
     L.append('')
     L.append('| Tabela | Origem (fase 1) | Compressão origem | MB origem | MB cloud (zstd) | Variação |')
@@ -159,6 +159,9 @@ def write_manifest(path, info):
     L.append('O `ratings_csv` é uma cópia byte a byte do CSV, sem compressão.')
     L.append('')
 
+
+def seccao_schemas(L, info):
+    """Colunas e tipos (DuckDB) de cada tabela."""
     L.append('## Schemas')
     L.append('')
     for t in info['tabelas']:
@@ -175,6 +178,9 @@ def write_manifest(path, info):
             L.append('Tipos fixados pelo `SCHEMAS` do `common.py` ao ler o CSV (com cabeçalho, separador `,`).')
         L.append('')
 
+
+def seccao_particoes(L, info):
+    """Linhas, tamanho e ficheiros de cada partição do ratings_part."""
     L.append('## ratings_part: partições')
     L.append('')
     L.append('| Ano | Linhas | Tamanho (MB) | Ficheiros |')
@@ -190,6 +196,9 @@ def write_manifest(path, info):
     L.append('Ano calculado com `year(to_timestamp("timestamp"))` em UTC.')
     L.append('')
 
+
+def seccao_tipos_athena(L, info):
+    """Correspondência de tipos DuckDB -> Athena e colunas de cada tabela para o DDL."""
     L.append('## Tipos para o DDL do Athena')
     L.append('')
     L.append('O Athena (catálogo Glue/Hive) guarda os nomes das colunas em minúsculas: `userId` passa a `userid`. '
@@ -221,6 +230,16 @@ def write_manifest(path, info):
                      "`TBLPROPERTIES ('skip.header.line.count'='1')`.")
             L.append('')
 
+
+def write_manifest(path, info):
+    """Escreve o manifesto em Markdown a partir do dicionário montado no main()."""
+    L = []
+    seccao_cabecalho(L, info)
+    seccao_tabelas(L, info)
+    seccao_compressao(L, info)
+    seccao_schemas(L, info)
+    seccao_particoes(L, info)
+    seccao_tipos_athena(L, info)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('\n'.join(L).rstrip() + '\n')
 
@@ -363,9 +382,51 @@ def verificar_csv(con, csv_file, csv_dst, n_ratings, problemas):
             'linhas': n_csv, 'compressao': 'nenhuma (CSV)', 'schema': list(SCHEMAS['ratings'].items())}
 
 
+def tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file):
+    """Confirma que as entradas da fase 1 existem e devolve as tabelas a copiar. Termina se faltar alguma."""
+    em_falta = []
+    for p in [pq_dir / f'{t}.parquet' for t in TABELAS_CLOUD] + [fase1_part, csv_file]:
+        if not p.exists():
+            em_falta.append(str(p))
+    if em_falta:
+        sys.exit('Erro: faltam ficheiros da fase 1: ' + ', '.join(em_falta) +
+                 f'\nCorre primeiro: python run_pipeline.py --dataset {ds} --steps ingest parquet')
+    return TABELAS_CLOUD
+
+
+def verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part, csv_file, csv_dst):
+    """Corre todas as verificações e mostra um resumo. Se alguma falhar, termina com erro.
+
+    Devolve (info_tabelas, info_comp, particoes) para o manifesto.
+    """
+    print('[prepare_cloud] verificações')
+    # Juntam-se todos os problemas numa lista, para os mostrar de uma vez
+    problemas = check_structure(cloud_dir, tables)
+    info_tabelas, info_comp = verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas)
+    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira de TABELAS_CLOUD
+    schema_ratings = info_tabelas[0]['schema']
+    particoes, info_part, comp_part = verificar_particoes(con, ds, cloud_dir / 'ratings_part', fase1_part,
+                                                          n_ratings, schema_ratings, problemas)
+    info_csv = verificar_csv(con, csv_file, csv_dst, n_ratings, problemas)
+    # No manifesto, ratings_part e ratings_csv aparecem logo a seguir a ratings
+    info_tabelas.insert(1, info_part)
+    info_tabelas.insert(2, info_csv)
+    info_comp.insert(1, comp_part)
+
+    for t in info_tabelas:
+        print(f'  {t["nome"]:12} {t["linhas"]:>12,} linhas  {t["ficheiros"]:>3} ficheiro(s)  {t["mb"]:>8.2f} MB')
+
+    if problemas:
+        print('[prepare_cloud] ERRO: as verificações falharam; o manifesto não foi gerado.', file=sys.stderr)
+        for p in problemas:
+            print(f'  - {p}', file=sys.stderr)
+        sys.exit(1)
+    return info_tabelas, info_comp, particoes
+
+
 def main():
     """Escreve data/cloud/<pasta>/, verifica tudo e, se estiver tudo certo, gera o manifesto."""
-    args = parse_args()
+    args = parse_args(__doc__)
     cfg = load_config(args.dataset)
     ds = cfg['dataset']
     pasta = cfg['source']['folder']          # ml-latest-small, ml-1m ou ml-32m
@@ -377,19 +438,7 @@ def main():
     manifest = ROOT / 'reports' / f'cloud_manifest_{ds}.md'
     print(f'[prepare_cloud] dataset={ds} -> data/cloud/{pasta}/')
 
-    # 0. As entradas da fase 1 têm de existir. O 1M não tem tags nem links, por isso a lista
-    #    de tabelas é a das que existem em Parquet.
-    tables = []
-    for t in SCHEMAS:
-        if (pq_dir / f'{t}.parquet').exists():
-            tables.append(t)
-    em_falta = []
-    for p in (pq_dir / 'ratings.parquet', fase1_part, csv_file):
-        if not p.exists():
-            em_falta.append(str(p))
-    if em_falta:
-        sys.exit('Erro: faltam ficheiros da fase 1: ' + ', '.join(em_falta) +
-                 f'\nCorre primeiro: python run_pipeline.py --dataset {ds} --steps ingest parquet')
+    tables = tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file)
 
     # Um manifesto antigo deixaria de corresponder aos ficheiros: apaga-se já, e só se
     # volta a escrever no fim, se todas as verificações passarem.
@@ -414,28 +463,9 @@ def main():
     particionar_ratings(con, pq_dir, part_dir)
     csv_dst = copiar_csv(csv_file, cloud_dir)
 
-    # 4. Verificações. Juntam-se todos os problemas numa lista para os mostrar de uma vez.
-    print('[prepare_cloud] verificações')
-    problemas = check_structure(cloud_dir, tables)
-    info_tabelas, info_comp = verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas)
-    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira tabela do SCHEMAS
-    schema_ratings = info_tabelas[0]['schema']
-    particoes, info_part, comp_part = verificar_particoes(con, ds, part_dir, fase1_part, n_ratings,
-                                                          schema_ratings, problemas)
-    info_csv = verificar_csv(con, csv_file, csv_dst, n_ratings, problemas)
-    # No manifesto, ratings_part e ratings_csv aparecem logo a seguir a ratings
-    info_tabelas.insert(1, info_part)
-    info_tabelas.insert(2, info_csv)
-    info_comp.insert(1, comp_part)
-
-    for t in info_tabelas:
-        print(f'  {t["nome"]:12} {t["linhas"]:>12,} linhas  {t["ficheiros"]:>3} ficheiro(s)  {t["mb"]:>8.2f} MB')
-
-    if problemas:
-        print('[prepare_cloud] ERRO: as verificações falharam; o manifesto não foi gerado.', file=sys.stderr)
-        for p in problemas:
-            print(f'  - {p}', file=sys.stderr)
-        sys.exit(1)
+    # 4. Verificações
+    info_tabelas, info_comp, particoes = verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part,
+                                                        csv_file, csv_dst)
 
     # 5. Manifesto
     write_manifest(manifest, {'dataset': ds, 'pasta': pasta, 'gerado_em': now(),

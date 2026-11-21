@@ -8,10 +8,8 @@ Objetivo:
         benchmark  scripts/03_benchmark.py   medir o tempo das queries de sql/
         eda        scripts/04_eda.py         análise exploratória (figuras e relatório)
         analises   scripts/05_analises.py    queries de análise de sql/analise/ (CSV e relatório)
-    E dois passos que só correm quando são pedidos com --steps:
-        cloud      scripts/cloud_pipeline.py  fase 2: S3 -> Glue -> Athena (usa a AWS e tem custos)
-        imdb       scripts/07_imdb.py         fase 3: IMDb vs MovieLens (descarrega ~240 MB do IMDb;
-                                              precisa do links.csv, por isso não corre com o 1M)
+    E um passo da fase 2 que só corre quando é pedido com --steps cloud (usa a AWS e tem custos):
+        cloud      scripts/cloud_pipeline.py  S3 -> Glue -> Athena: upload, catálogo e benchmark
 
 Entradas:
     config.yaml e a opção --dataset (small | 1m | 32m).
@@ -26,7 +24,6 @@ Como correr:
     python run_pipeline.py --dataset small                       todos os passos
     python run_pipeline.py --dataset 1m --steps ingest parquet   só alguns passos
     python run_pipeline.py --dataset small --steps cloud         fase cloud (AWS Academy Learner Lab)
-    python run_pipeline.py --dataset small --steps imdb          comparação com o IMDb
 """
 import argparse
 import subprocess
@@ -34,9 +31,7 @@ import sys
 import time
 from pathlib import Path
 
-# Versão mínima de Python: o polars>=1.37 do requirements.txt não instala abaixo do 3.10.
-# Verificamos já aqui, antes de importar o resto, para o erro ser claro em vez de um
-# ImportError ou SyntaxError difícil de perceber mais à frente.
+# O polars>=1.37 não instala abaixo do 3.10: verifica-se já aqui, para o erro ser claro.
 PYTHON_MINIMO = (3, 10)
 if sys.version_info < PYTHON_MINIMO:
     sys.exit(f'Erro: este pipeline requer Python {PYTHON_MINIMO[0]}.{PYTHON_MINIMO[1]} ou superior, '
@@ -44,8 +39,7 @@ if sys.version_info < PYTHON_MINIMO:
              'Cria o ambiente com uma versão mais recente, por exemplo "python3.12 -m venv .venv", '
              'e vê a secção "Ambiente" do README.')
 
-# O common.py está na pasta scripts/. Acrescentamo-la à lista de pastas onde o Python
-# procura módulos, para o "from common import ..." funcionar a partir da raiz.
+# O common.py está em scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts'))
 from common import DATASETS, ROOT, append_row, load_config, now  # noqa: E402
 
@@ -57,13 +51,10 @@ STEPS = {
     'eda': 'scripts/04_eda.py',
     'analises': 'scripts/05_analises.py',
     'cloud': 'scripts/cloud_pipeline.py',
-    'imdb': 'scripts/07_imdb.py',
 }
-# Passos que ficam fora dos passos por omissão e só correm quando são pedidos com --steps:
-# - cloud: usa a AWS (credenciais e custos);
-# - imdb: descarrega cerca de 240 MB do IMDb e não funciona com o 1M (que não tem links.csv).
-PASSOS_A_PEDIDO = ('cloud', 'imdb')
-STEPS_OMISSAO = [step for step in STEPS if step not in PASSOS_A_PEDIDO]
+# O passo cloud fica fora dos passos por omissão: usa a AWS (credenciais e custos),
+# por isso só corre quando é pedido explicitamente com --steps cloud.
+STEPS_OMISSAO = [step for step in STEPS if step != 'cloud']
 
 
 def main():
@@ -72,7 +63,7 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
     parser.add_argument('--steps', nargs='+', choices=list(STEPS), default=STEPS_OMISSAO,
-                        help=f"por omissão: {' '.join(STEPS_OMISSAO)} (cloud e imdb só a pedido)")
+                        help=f"por omissão: {' '.join(STEPS_OMISSAO)} (o cloud só com --steps cloud)")
     parser.add_argument('--bucket-dados', dest='bucket_dados', help='só passo cloud: bucket com data/cloud/<pasta>/')
     parser.add_argument('--bucket-resultados', dest='bucket_resultados',
                         help='só passo cloud: bucket dos resultados do Athena')
@@ -80,9 +71,8 @@ def main():
     cfg = load_config(args.dataset)
 
     for step in args.steps:
-        # Cada passo corre num processo Python separado (o mesmo Python deste script,
-        # sys.executable), tal como se fosse chamado à mão no terminal.
-        # Se um passo falhar, o pipeline pára, em vez de continuar com dados incompletos.
+        # Cada passo corre num processo separado, como se fosse chamado à mão no terminal.
+        # Se um passo falhar, o pipeline pára, para não continuar com dados incompletos.
         comando = [sys.executable, str(ROOT / STEPS[step]), '--dataset', cfg['dataset']]
         if step == 'cloud':
             if args.bucket_dados:
@@ -98,9 +88,7 @@ def main():
 
         append_row(cfg['paths']['results'] / 'pipeline_runs.csv',
                    {'run_at': now(), 'dataset': cfg['dataset'], 'step': step, 'seconds': seconds})
-        # flush=True escreve já no ecrã, para a linha não aparecer fora de ordem
-        # em relação ao que o passo imprimiu. É o tempo total do processo (arranque do
-        # Python, imports e trabalho), o mesmo que fica em pipeline_runs.csv.
+        # Inclui o arranque do Python e os imports, como no pipeline_runs.csv
         print(f'[{step}] tempo total do passo (processo completo): {seconds:.2f} s\n', flush=True)
 
 

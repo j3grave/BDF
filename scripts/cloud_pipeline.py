@@ -9,8 +9,6 @@ Objetivo:
         c. cria os dois buckets, se ainda não existirem;
         d. envia data/cloud/<pasta>/ para s3://<bucket-dados>/<pasta>/, só os ficheiros novos
            ou com tamanho diferente (como o "aws s3 sync");
-        d2. se existir o IMDb (passo imdb), prepara data/cloud/imdb/ e envia-o para
-           s3://<bucket-dados>/imdb/ (a mesma pasta para os três datasets);
         e. corre o athena_setup.py --recriar (depois do upload, para o MSCK REPAIR TABLE
            ver as partições no S3) e valida as contagens;
         f. corre o athena_benchmark.py, só se a validação do setup tiver passado.
@@ -25,8 +23,7 @@ Entradas:
 
 Saídas:
     Buckets e objetos no S3, base de dados e tabelas no Glue Data Catalog,
-    reports/cloud_manifest_<dataset>.md (se o prepare_cloud.py correr),
-    reports/cloud_manifest_imdb.md (se o prepare_cloud_imdb.py correr) e
+    reports/cloud_manifest_<dataset>.md (se o prepare_cloud.py correr) e
     results/cloud_benchmarks.csv. O ID da conta só aparece no ecrã.
 
 Como correr:
@@ -36,15 +33,11 @@ Como correr:
 import argparse
 import subprocess
 import sys
-import threading
 import time
 
 from athena_common import (MENSAGEM_CREDENCIAIS, account_id, add_aws_args, aws_settings, boto3_session,
                            is_credentials_error, resolve_buckets)
 from common import DATASETS, ROOT, load_config
-
-# Ficheiros acima deste tamanho mostram a percentagem enviada durante o upload
-MOSTRAR_PROGRESSO_MB = 20
 
 
 def parse_args():
@@ -76,24 +69,6 @@ def prepare_needed(ds, cloud_dir, manifest, pq_dir, csv_file):
     return None
 
 
-def imdb_precisa_de_preparar():
-    """Motivo para (re)correr o prepare_cloud_imdb.py, ou None se data/cloud/imdb/ estiver atualizada.
-
-    Mesma lógica do prepare_needed: o manifesto só é escrito se as verificações passarem, e
-    tem de ser mais recente do que todos os ficheiros do IMDb em data/imdb/.
-    """
-    manifesto = ROOT / 'reports' / 'cloud_manifest_imdb.md'
-    if not (ROOT / 'data' / 'cloud' / 'imdb').exists():
-        return 'não existe data/cloud/imdb'
-    if not manifesto.exists():
-        return 'não existe reports/cloud_manifest_imdb.md'
-    origens = [f for f in (ROOT / 'data' / 'imdb').rglob('*') if f.is_file()]
-    for f in origens:
-        if f.stat().st_mtime > manifesto.stat().st_mtime:
-            return f'{f.name} é mais recente do que o manifesto'
-    return None
-
-
 def run_script(script, args):
     """Corre um script de scripts/ com o mesmo Python e pára o pipeline se falhar."""
     comando = [sys.executable, str(ROOT / 'scripts' / script)] + args
@@ -118,7 +93,6 @@ def ensure_bucket(s3, bucket, region):
         if codigo not in ('404', 'NoSuchBucket'):
             raise
     # Em us-east-1 a API não aceita LocationConstraint; nas outras regiões é obrigatório.
-    # Montamos os argumentos num dicionário e passamo-los com ** (cada chave vira um argumento).
     kwargs = {'Bucket': bucket}
     if region != 'us-east-1':
         kwargs['CreateBucketConfiguration'] = {'LocationConstraint': region}
@@ -134,34 +108,6 @@ def remote_sizes(s3, bucket, prefix):
         for obj in pagina.get('Contents', []):
             tamanhos[obj['Key']] = obj['Size']
     return tamanhos
-
-
-class Progresso:
-    """Callback do upload_file: mostra a percentagem enviada na mesma linha do terminal.
-
-    O boto3 envia os ficheiros grandes em vários pedaços ao mesmo tempo e, depois de cada
-    pedaço, chama o callback com o n.º de bytes enviados. Usamos uma classe (e não uma função)
-    para guardar entre chamadas o total já enviado.
-    """
-
-    def __init__(self, nome, total):
-        """Guarda o nome e o tamanho do ficheiro e começa a contagem em 0 bytes."""
-        self.nome, self.total, self.enviado = nome, total, 0
-        self.ultimo = -1   # última percentagem mostrada (para não repetir a mesma)
-        # Como os pedaços vão em paralelo (várias threads), o lock garante que duas chamadas
-        # não atualizam self.enviado ao mesmo tempo.
-        self.lock = threading.Lock()
-
-    def __call__(self, n_bytes):
-        """Chamado pelo boto3 depois de cada pedaço: soma os bytes e mostra a percentagem."""
-        # __call__ permite usar o objeto como se fosse uma função: progresso(n_bytes)
-        # O "\r" volta ao início da linha, por isso a percentagem é reescrita no mesmo sítio.
-        with self.lock:
-            self.enviado += n_bytes
-            pct = int(self.enviado * 100 / self.total) if self.total else 100
-            if pct != self.ultimo:
-                self.ultimo = pct
-                print(f'\r    {self.nome}: {pct:3d}% de {self.total / 1e6:.1f} MB', end='', flush=True)
 
 
 def sync_to_s3(s3, cloud_dir, bucket, pasta):
@@ -180,12 +126,8 @@ def sync_to_s3(s3, cloud_dir, bucket, pasta):
         if remotos.get(chave) == tamanho:
             saltados += 1
             continue
-        if tamanho > MOSTRAR_PROGRESSO_MB * 1e6:
-            s3.upload_file(str(f), bucket, chave, Callback=Progresso(chave, tamanho))
-            print()
-        else:
-            s3.upload_file(str(f), bucket, chave)
-            print(f'    {chave} ({tamanho / 1e6:.2f} MB)')
+        print(f'    {chave} ({tamanho / 1e6:.2f} MB)', flush=True)
+        s3.upload_file(str(f), bucket, chave)
         enviados += 1
         bytes_enviados += tamanho
 
@@ -238,17 +180,6 @@ def main():
     # d. Upload
     print(f'[cloud] d. upload de data/cloud/{pasta}/ para s3://{aws["bucket_dados"]}/{pasta}/', flush=True)
     sync_to_s3(s3, cloud_dir, aws['bucket_dados'], pasta)
-
-    # d2. IMDb (só se o passo imdb já tiver corrido): mesma pasta imdb/ para todos os datasets
-    if (ROOT / 'data' / 'imdb' / 'parquet').exists():
-        motivo_imdb = imdb_precisa_de_preparar()
-        if motivo_imdb:
-            print(f'[cloud] d2. a preparar data/cloud/imdb/: {motivo_imdb}', flush=True)
-            run_script('prepare_cloud_imdb.py', [])
-        print(f'[cloud] d2. upload de data/cloud/imdb/ para s3://{aws["bucket_dados"]}/imdb/', flush=True)
-        sync_to_s3(s3, ROOT / 'data' / 'cloud' / 'imdb', aws['bucket_dados'], 'imdb')
-    else:
-        print('[cloud] d2. sem IMDb em data/imdb/parquet/ (passo imdb não corrido): salta o IMDb')
 
     # e. e f. Os nomes dos buckets já resolvidos passam explicitamente, para os dois scripts
     # usarem exatamente os mesmos (e não voltarem a perguntar o ID da conta).

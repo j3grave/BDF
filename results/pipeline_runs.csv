@@ -43,5 +43,3 @@ run_at,dataset,step,seconds
 2026-11-09T18:40:52,small,benchmark,0.38
 2026-11-09T18:40:53,small,eda,1.77
 2026-11-09T18:40:54,small,analises,0.45
-2026-11-15T16:04:14,small,imdb,6.96
-2026-11-15T16:40:24,32m,imdb,12.08

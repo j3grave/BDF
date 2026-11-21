@@ -37,15 +37,9 @@ from athena_common import ATHENA_SQL, Athena, AthenaError, add_aws_args, aws_set
 from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config
 from prepare_cloud import ATHENA_TYPES, count_of, counts_by_year, schema_of
 
-# Apanha o nome da tabela, a lista de colunas e (se existir) a lista de partições de um CREATE TABLE.
-# Leitura da expressão regular (regex):
-#   \s+  um ou mais espaços (ou mudanças de linha)
-#   (\w+)  grupo 1: o nome da tabela (letras, algarismos e _)
-#   \((.*?)\)  grupo 2: tudo o que está entre os primeiros parênteses (a lista de colunas)
-#   (?:\s*PARTITIONED\s+BY\s*\((.*?)\))?  grupo 3, opcional: as colunas de partição
-# IGNORECASE: maiúsculas ou minúsculas; DOTALL: o "." também apanha mudanças de linha.
-RE_CREATE =re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
-                       r'(?:\s*PARTITIONED\s+BY\s*\((.*?)\))?', re.IGNORECASE | re.DOTALL)
+# Grupos: 1 = nome da tabela, 2 = colunas, 3 = colunas de partição (se existirem)
+RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
+                        r'(?:\s*PARTITIONED\s+BY\s*\((.*?)\))?', re.IGNORECASE | re.DOTALL)
 
 
 def parse_args():
@@ -63,7 +57,7 @@ def parse_columns(texto):
     """'userid int, `timestamp` bigint' -> [('userid', 'int'), ('timestamp', 'bigint')]"""
     colunas = []
     for parte in texto.split(','):          # uma parte por coluna: "userid int"
-        nome, tipo = parte.split()          # separa pelos espaços: nome e tipo
+        nome, tipo = parte.split()
         # Tira os backticks (`timestamp`) e passa tudo a minúsculas, como no catálogo do Athena
         colunas.append((nome.strip('`').lower(), tipo.lower()))
     return colunas
@@ -85,57 +79,19 @@ def ddl_statements(params):
     return instrucoes
 
 
-# Tipos do IMDb que o MovieLens não tem: isAdult é booleano e genres é uma lista de textos
-TIPOS_ATHENA = dict(ATHENA_TYPES)
-TIPOS_ATHENA['BOOLEAN'] = 'boolean'
-TIPOS_ATHENA['VARCHAR[]'] = 'array<string>'
-
-# Tabelas do IMDb em TSV: colunas e tipos com que o Athena as lê (o TSV não tem tipos próprios).
-# No TSV, isadult é 0/1 (int) e genres é texto separado por vírgulas.
-COLUNAS_TSV_IMDB = {
-    'imdb_title_ratings_tsv': [('tconst', 'string'), ('averagerating', 'double'), ('numvotes', 'int')],
-    'imdb_title_basics_tsv': [('tconst', 'string'), ('titletype', 'string'), ('primarytitle', 'string'),
-                              ('originaltitle', 'string'), ('isadult', 'int'), ('startyear', 'int'),
-                              ('endyear', 'int'), ('runtimeminutes', 'int'), ('genres', 'string')],
-}
-
-
-def pasta_local(cloud_dir, table):
-    """Pasta local de uma tabela: data/cloud/<pasta>/<tabela>/, ou data/cloud/imdb/<tabela sem imdb_>/.
-
-    As tabelas do IMDb são as mesmas para todos os datasets, por isso ficam em data/cloud/imdb/
-    (e em s3://<bucket>/imdb/), com o nome sem o prefixo imdb_ (ex.: imdb_title_ratings -> title_ratings).
-    """
-    if table.startswith('imdb_'):
-        return ROOT / 'data' / 'cloud' / 'imdb' / table[len('imdb_'):]
-    return cloud_dir / table
-
-
 def local_schema(con, cloud_dir, table):
     """Colunas e tipos (no formato do Athena) dos ficheiros locais de uma tabela."""
-    if table in COLUNAS_TSV_IMDB:
-        return COLUNAS_TSV_IMDB[table]
-    pasta = pasta_local(cloud_dir, table)
     if table == 'ratings_csv':
         colunas = list(SCHEMAS['ratings'].items())     # tipos com que o CSV é lido no pipeline
     elif table == 'ratings_part':
-        colunas = schema_of(con, (pasta / '*' / '*.parquet').as_posix(), hive=False)
+        colunas = schema_of(con, (cloud_dir / table / '*' / '*.parquet').as_posix(), hive=False)
     else:
-        colunas = schema_of(con, (pasta / '*.parquet').as_posix())
-    return [(nome.lower(), TIPOS_ATHENA[tipo]) for nome, tipo in colunas]
+        colunas = schema_of(con, (cloud_dir / table / '*.parquet').as_posix())
+    return [(nome.lower(), ATHENA_TYPES[tipo]) for nome, tipo in colunas]
 
 
 def local_count(con, cloud_dir, table):
     """N.º de linhas dos ficheiros locais de uma tabela."""
-    if table in COLUNAS_TSV_IMDB:
-        # TSV.gz do IMDb, lido como no 07_imdb.py (sem aspas, \N = nulo, tudo como texto)
-        tsv = (pasta_local(cloud_dir, table) / '*.tsv.gz').as_posix()
-        return con.execute(f"""
-            SELECT count(*) FROM read_csv('{tsv}', delim='\\t', header=true, quote='', escape='',
-                                          nullstr='\\N', all_varchar=true)
-        """).fetchone()[0]
-    if table.startswith('imdb_'):
-        return count_of(con, (pasta_local(cloud_dir, table) / '*.parquet').as_posix())
     if table == 'ratings_csv':
         csv_file = (cloud_dir / table / 'ratings.csv').as_posix()
         return con.execute(f"""
@@ -152,7 +108,7 @@ def check_ddl(con, cloud_dir, instrucoes):
     problemas = []
     for ficheiro, table, sql in instrucoes:
         # Só os CREATE TABLE de tabelas que existem neste dataset
-        if table is None or not pasta_local(cloud_dir, table).exists():
+        if table is None or not (cloud_dir / table).exists():
             continue
         m = RE_CREATE.search(sql)
         # Colunas: as do DDL (grupo 2 da regex) têm de ser iguais às dos ficheiros
@@ -174,6 +130,54 @@ def check_ddl(con, cloud_dir, instrucoes):
     return problemas
 
 
+def criar_tabelas(athena, aws, instrucoes, recriar):
+    """Corre o DDL no Athena: primeiro a base de dados, depois as tabelas dentro dela."""
+    for ficheiro, table, sql in instrucoes:
+        # --recriar: apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
+        if recriar and table:
+            athena.run(f'DROP TABLE IF EXISTS `{table}`', aws['database'])
+        # 00_database.sql cria a base de dados, por isso ainda não pode correr "dentro" dela
+        if ficheiro.startswith('00_'):
+            database = None
+        else:
+            database = aws['database']
+        stats = athena.run(sql, database)
+        print(f'  {ficheiro:32} OK ({stats["total_s"]:.1f} s)')
+
+
+def validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas):
+    """Compara as contagens no Athena com as dos ficheiros locais. Devolve os bytes lidos."""
+    print('[athena_setup] validação das contagens (Athena vs data/cloud/)')
+    custo_bytes = 0
+    for table in tabelas:
+        stats = athena.run(f'SELECT count(*) FROM {table}', aws['database'])
+        custo_bytes += stats['scanned_bytes']
+        n_athena = int(athena.rows(stats['id'])[0][0])
+        n_local = local_count(con, cloud_dir, table)
+        estado = 'OK' if n_athena == n_local else 'DIFERENTE'
+        if n_athena != n_local:
+            problemas.append(f'{table}: {n_athena} linhas no Athena, {n_local} nos ficheiros')
+        print(f'  {table:12} Athena {n_athena:>12,}  local {n_local:>12,}  {estado}')
+
+    # Contagens por ano: se o MSCK REPAIR TABLE não tiver visto as pastas, faltam anos
+    stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'])
+    custo_bytes += stats['scanned_bytes']
+    por_ano_athena = {}
+    for ano, n in athena.rows(stats['id']):   # o Athena devolve texto: converte-se para int
+        por_ano_athena[int(ano)] = int(n)
+    por_ano_local = counts_by_year(con, (cloud_dir / 'ratings_part' / '*' / '*.parquet').as_posix())
+    if por_ano_athena != por_ano_local:
+        # Anos com contagens diferentes (incluindo anos que só existem num dos lados)
+        diferentes = []
+        for ano in sorted(set(por_ano_athena) | set(por_ano_local)):
+            if por_ano_athena.get(ano) != por_ano_local.get(ano):
+                diferentes.append(ano)
+        problemas.append(f'ratings_part: contagens por ano diferentes nos anos {diferentes} '
+                         '(faltou o MSCK REPAIR TABLE?)')
+    print(f'  ratings_part {len(por_ano_athena)} partições no Athena, {len(por_ano_local)} nos ficheiros')
+    return custo_bytes
+
+
 def main():
     """Verifica o DDL, cria a base de dados e as tabelas no Athena e valida as contagens."""
     args = parse_args()
@@ -193,15 +197,11 @@ def main():
     # sabemos o bucket, por isso fica um texto de exemplo.
     params = {'database': aws['database'], 'pasta': aws['pasta'],
               'bucket': aws.get('bucket_dados') or '<bucket-dados>'}
-    # Só as tabelas que existem neste dataset (o 1M não tem tags nem links; o IMDb só se
-    # existir data/cloud/imdb/, criada pelo prepare_cloud_imdb.py)
-    instrucoes = []
+    instrucoes = ddl_statements(params)
     tabelas = []
-    for ficheiro, tabela, sql in ddl_statements(params):
-        if tabela is None or pasta_local(cloud_dir, tabela).exists():
-            instrucoes.append((ficheiro, tabela, sql))
-            if tabela:
-                tabelas.append(tabela)
+    for _, tabela, _ in instrucoes:
+        if tabela:
+            tabelas.append(tabela)
 
     # 1. Sem AWS: o DDL tem de coincidir com os ficheiros que foram (ou vão) para o S3
     con = duckdb.connect()
@@ -218,50 +218,11 @@ def main():
             print(f'\n-- {ficheiro}\n{sql};')
         return
 
-    # 2. Base de dados e tabelas. A base de dados corre sem contexto; o resto dentro dela.
+    # 2 e 3. Base de dados, tabelas e validação das contagens
     athena = Athena(aws)
     try:
-        for ficheiro, table, sql in instrucoes:
-            # --recriar: apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
-            if args.recriar and table:
-                athena.run(f'DROP TABLE IF EXISTS `{table}`', aws['database'])
-            # 00_database.sql cria a base de dados, por isso ainda não pode correr "dentro" dela
-            if ficheiro.startswith('00_'):
-                database = None
-            else:
-                database = aws['database']
-            stats = athena.run(sql, database)
-            print(f'  {ficheiro:32} OK ({stats["total_s"]:.1f} s)')
-
-        # 3. Validação: contagens no Athena iguais às dos ficheiros locais
-        print('[athena_setup] validação das contagens (Athena vs data/cloud/)')
-        custo_bytes = 0
-        for table in tabelas:
-            stats = athena.run(f'SELECT count(*) FROM {table}', aws['database'])
-            custo_bytes += stats['scanned_bytes']
-            n_athena = int(athena.rows(stats['id'])[0][0])
-            n_local = local_count(con, cloud_dir, table)
-            estado = 'OK' if n_athena == n_local else 'DIFERENTE'
-            if n_athena != n_local:
-                problemas.append(f'{table}: {n_athena} linhas no Athena, {n_local} nos ficheiros')
-            print(f'  {table:12} Athena {n_athena:>12,}  local {n_local:>12,}  {estado}')
-
-        # Contagens por ano: se o MSCK REPAIR TABLE não tiver visto as pastas, faltam anos
-        stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'])
-        custo_bytes += stats['scanned_bytes']
-        por_ano_athena = {}
-        for ano, n in athena.rows(stats['id']):   # o Athena devolve texto: converte-se para int
-            por_ano_athena[int(ano)] = int(n)
-        por_ano_local = counts_by_year(con, (cloud_dir / 'ratings_part' / '*' / '*.parquet').as_posix())
-        if por_ano_athena != por_ano_local:
-            # Anos com contagens diferentes (incluindo anos que só existem num dos lados)
-            diferentes = []
-            for ano in sorted(set(por_ano_athena) | set(por_ano_local)):
-                if por_ano_athena.get(ano) != por_ano_local.get(ano):
-                    diferentes.append(ano)
-            problemas.append(f'ratings_part: contagens por ano diferentes nos anos {diferentes} '
-                             '(faltou o MSCK REPAIR TABLE?)')
-        print(f'  ratings_part {len(por_ano_athena)} partições no Athena, {len(por_ano_local)} nos ficheiros')
+        criar_tabelas(athena, aws, instrucoes, args.recriar)
+        custo_bytes = validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas)
     except AthenaError as erro:
         sys.exit(f'[athena_setup] ERRO no Athena: {erro}')
 

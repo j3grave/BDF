@@ -4,7 +4,7 @@
 Objetivo:
     Correr as queries de sql/analise/ sobre um dataset e gravar o resultado de cada uma em
     CSV. As queries vêm do notebook do Luís (células 108, 109 e 112), extraídas para ficheiros
-    .sql e corrigidas onde foi preciso (ver docs/validacao_queries_colega.md).
+    .sql e corrigidas onde foi preciso (relatório no branch arquivo/main-com-imdb).
     Tal como no 04_eda.py, as agregações são feitas no DuckDB: o resultado vai diretamente do
     DuckDB para o CSV (COPY), sem passar pelo Python. Só os resultados pequenos (uma linha, ou
     uma linha por utilizador) são lidos pelo Python para as verificações.
@@ -145,12 +145,7 @@ MACROS_ATHENA = [
 # Padrões que a emulação não reproduz: no Trino, uma divisão com um literal decimal
 # (100.0 * x / y, x * 1.0 / y) fica com a escala do literal (1 casa decimal), enquanto no DuckDB
 # dá um número real. Nas versões Athena usa-se CAST(... AS double); esta verificação apanha
-# esquecimentos.
-# Leitura da expressão regular (regex):
-#   \d+\.\d+   um número com parte decimal, ex.: 100.0
-#   \s*        espaços opcionais
-#   [*/]       um sinal de multiplicar ou dividir
-# A primeira metade apanha "100.0 *" (literal antes da conta) e a segunda "* 1.0" (literal depois).
+# esquecimentos. Apanha "100.0 *" (literal antes da conta) e "* 1.0" (literal depois).
 DECIMAL_EM_CONTA = re.compile(r'(\d+\.\d+\s*[*/])|([*/]\s*\d+\.\d+)')
 
 
@@ -320,11 +315,10 @@ def referencia_bots(pasta, ds):
 
 def iguais(a, b, tol=1e-6):
     """Compara dois resultados pela posição das colunas (no Athena os nomes saem em minúsculas)."""
-    # shape = (n.º de linhas, n.º de colunas): se for diferente, nem vale a pena comparar valores
     if a.shape != b.shape:
         return False, f'formas diferentes: {a.shape} vs {b.shape}'
     for j in range(a.shape[1]):
-        x, y = a.iloc[:, j], b.iloc[:, j]   # coluna j de cada resultado
+        x, y = a.iloc[:, j], b.iloc[:, j]
         if pd.api.types.is_numeric_dtype(x) and pd.api.types.is_numeric_dtype(y):
             # Números: iguais a menos de uma tolerância (as somas em vírgula flutuante podem
             # diferir no último dígito). Dois valores em falta contam como iguais.

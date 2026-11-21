@@ -48,7 +48,7 @@ Pastas principais:
 - `sql/`: as 5 queries do benchmark; `sql/analise/` com as 16 análises em DuckDB; `sql/athena/` com as versões Trino (`queries/`, `analise/`) e o DDL (`ddl/`); `sql/cloud/` com a query de partition pruning.
 - `results/`: CSV de tamanhos, tempos e benchmarks, e uma pasta por dataset com EDA, análises e coordenação. Os resultados leves estão versionados; os dados não.
 - `data/<ds>/{raw,csv,parquet}`: não versionado; no Mac é um symlink para `~/Desktop/Nova IMS 2 Semestre/BDF/data/`.
-- `reports/`: manifestos da preparação cloud. `docs/validacao_queries_colega.md`: relatório de validação das queries do Luís.
+- `reports/`: manifestos da preparação cloud. O relatório de validação das queries do Luís (`docs/validacao_queries_colega.md`) foi arquivado no branch `arquivo/main-com-imdb`.
 - Três notebooks do lab na raiz, não alterados pelo pipeline.
 
 `config.yaml` define o dataset por omissão (`small`), as pastas `data/` e `results/` e a secção `aws` (região `us-east-1`, workgroup `primary`, buckets ainda a `null`). Requer Python ≥ 3.10 (testado em 3.13) e um venv com o `requirements.txt`.

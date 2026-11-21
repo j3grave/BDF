@@ -78,8 +78,7 @@ def main():
             continue
 
         for fmt, params in sources(cfg['paths']['parquet']).items():
-            # Template troca ${ratings} e ${movies} pelo texto do formato atual.
-            # Usa-se Template (e não .format) porque o SQL pode ter chavetas.
+            # Template (e não .format) porque o SQL pode ter chavetas
             query = Template(text).substitute(params)
 
             times = []

@@ -404,7 +404,7 @@ def fig_generos(con, pasta, ds, figuras, ind):
                SUM(r.n) AS avaliacoes, SUM(r.media * r.n) / SUM(r.n) AS media
         FROM g LEFT JOIN r USING (movieId)
         GROUP BY genero ORDER BY filmes""")
-    # Filtro do pandas: mantém as linhas cujo género não é "(no genres listed)"
+    # Sem os filmes sem género
     df = df[df["genero"] != "(no genres listed)"]
     ind["n_generos"] = len(df)
 
@@ -657,9 +657,7 @@ def main():
     print(f"  {n_r:,} avaliações · {n_u:,} utilizadores · {n_m:,} filmes avaliados".replace(",", " "))
     print(f"  esparsidade {ind['esparsidade_pct']}% · média {ind['rating_media']} · Gini utilizadores {ind['gini_user']}")
     print(f"  {len(figuras)} figuras em {pasta}")
-    # Tempo medido dentro do script, desde o início de main(): não inclui o arranque do
-    # Python nem os imports (pandas, matplotlib, duckdb). O run_pipeline.py mostra a seguir
-    # o tempo total do passo, que é por isso um pouco maior.
+    # Sem o arranque do Python nem os imports; o run_pipeline.py mostra o tempo total
     print(f"[eda] tempo interno do script (sem arranque nem imports): {segundos:.2f} s")
 
 

@@ -65,19 +65,6 @@ ATHENA_SOURCES = {
                 'movies': 'movies'},
     'parquet_part': {'ratings': 'ratings_part', 'movies': 'movies'},
 }
-# Fase 3 (IMDb): no formato csv as tabelas do IMDb em TSV.gz; nos outros, em Parquet.
-# O links só existe em Parquet (é pequeno e não é o que se está a comparar).
-for _fmt in ATHENA_SOURCES:
-    ATHENA_SOURCES[_fmt]['links'] = 'links'
-    if _fmt == 'csv':
-        ATHENA_SOURCES[_fmt]['imdb_ratings'] = 'imdb_title_ratings_tsv'
-        ATHENA_SOURCES[_fmt]['imdb_basics'] = 'imdb_title_basics_tsv'
-    else:
-        ATHENA_SOURCES[_fmt]['imdb_ratings'] = 'imdb_title_ratings'
-        ATHENA_SOURCES[_fmt]['imdb_basics'] = 'imdb_title_basics'
-
-# Pasta local do IMDb preparado para a cloud (prepare_cloud_imdb.py)
-CLOUD_IMDB = ROOT / 'data' / 'cloud' / 'imdb'
 
 
 def parse_args():
@@ -101,30 +88,11 @@ def duckdb_sources(cloud_dir):
     year = 'year(to_timestamp("timestamp")) AS year'
     ler_csv = (f"read_csv('{csv_file}', header=true, delim=',', quote='\"', escape='\"', "
                f"columns={duckdb_columns(SCHEMAS['ratings'])})")
-    fontes = {
+    return {
         'csv': {'ratings': f'(SELECT *, {year} FROM {ler_csv})', 'movies': movies},
         'parquet': {'ratings': f"(SELECT *, {year} FROM read_parquet('{flat}'))", 'movies': movies},
         'parquet_part': {'ratings': f"read_parquet('{part}', hive_partitioning=true)", 'movies': movies},
     }
-
-    # Fase 3 (IMDb): os mesmos ficheiros que vão para s3://<bucket>/imdb/
-    links = f"read_parquet('{(cloud_dir / 'links' / '*.parquet').as_posix()}')"
-    # TSV.gz lido como no 07_imdb.py: tudo como texto e os números convertidos depois
-    opcoes_tsv = "delim='\\t', header=true, quote='', escape='', nullstr='\\N', all_varchar=true"
-    tsv_ratings = (f"(SELECT tconst, CAST(averageRating AS DOUBLE) AS averageRating, CAST(numVotes AS INTEGER) AS numVotes "
-                   f"FROM read_csv('{(CLOUD_IMDB / 'title_ratings_tsv' / '*.tsv.gz').as_posix()}', {opcoes_tsv}))")
-    tsv_basics = f"read_csv('{(CLOUD_IMDB / 'title_basics_tsv' / '*.tsv.gz').as_posix()}', {opcoes_tsv})"
-    pq_ratings = f"read_parquet('{(CLOUD_IMDB / 'title_ratings' / '*.parquet').as_posix()}')"
-    pq_basics = f"read_parquet('{(CLOUD_IMDB / 'title_basics' / '*.parquet').as_posix()}')"
-    for fmt in fontes:
-        fontes[fmt]['links'] = links
-        if fmt == 'csv':
-            fontes[fmt]['imdb_ratings'] = tsv_ratings
-            fontes[fmt]['imdb_basics'] = tsv_basics
-        else:
-            fontes[fmt]['imdb_ratings'] = pq_ratings
-            fontes[fmt]['imdb_basics'] = pq_basics
-    return fontes
 
 
 def connect_duckdb():
@@ -134,12 +102,7 @@ def connect_duckdb():
     return con
 
 
-def imdb_disponivel(cloud_dir):
-    """True se houver IMDb preparado (data/cloud/imdb/) e links neste dataset (o 1M não tem)."""
-    return CLOUD_IMDB.exists() and (cloud_dir / 'links').exists()
-
-
-def load_queries(com_imdb):
+def load_queries():
     """Lista de (nome, sql_athena_template, sql_duckdb_template, formatos) para cada query."""
     queries = []
     for athena_file in sorted((ATHENA_SQL / 'queries').glob('*.sql')):
@@ -153,10 +116,6 @@ def load_queries(com_imdb):
         if duckdb_file is None:
             sys.exit(f'Erro: {athena_file.name} não tem versão DuckDB em sql/ nem em sql/cloud/')
         texto_athena = athena_file.read_text()
-        # Queries do IMDb (fase 3) só se o IMDb estiver preparado para este dataset
-        if '${imdb_' in texto_athena and not com_imdb:
-            print(f'  {nome}: salta (sem data/cloud/imdb/ ou sem links neste dataset)')
-            continue
         # Queries que só usam movies não dependem do formato dos ratings: correm uma vez
         if '${ratings}' in texto_athena:
             formatos = FORMATOS_RATINGS
@@ -190,6 +149,44 @@ def bench_athena(athena, sql, database, runs):
     }
 
 
+def linha_duckdb(ds, nome, fmt, sql, runs):
+    """Corre uma query no DuckDB, mostra o tempo e devolve a linha para o cloud_benchmarks.csv."""
+    mediana, n = bench_duckdb(sql, runs)
+    print(f'  duckdb  {nome:30} {fmt:13} {mediana * 1000:9.1f} ms  {n:>8,} linhas')
+    return {'run_at': now(), 'dataset': ds, 'engine': 'duckdb', 'query': nome, 'formato': fmt,
+            'runs': runs, 'median_s': round(mediana, 4), 'median_engine_s': '',
+            'data_scanned_mb': '', 'n_rows': n}
+
+
+def linha_athena(athena, database, ds, nome, fmt, sql, runs):
+    """Corre uma query no Athena e devolve a linha para o CSV e os bytes lidos por corrida."""
+    try:
+        r = bench_athena(athena, sql, database, runs)
+    except AthenaError as erro:
+        sys.exit(f'[cloud_benchmark] ERRO no Athena ({nome}, {fmt}): {erro}')
+    print(f"  athena  {nome:30} {fmt:13} {r['median_s'] * 1000:9.1f} ms  {r['n_rows']:>8,} linhas"
+          f"  {r['scanned_bytes'] / 1e6:9.2f} MB lidos")
+    linha = {'run_at': now(), 'dataset': ds, 'engine': 'athena', 'query': nome, 'formato': fmt,
+             'runs': runs, 'median_s': round(r['median_s'], 4),
+             'median_engine_s': round(r['median_engine_s'], 4),
+             'data_scanned_mb': round(r['scanned_bytes'] / 1e6, 2), 'n_rows': r['n_rows']}
+    return linha, r['scanned_bytes']
+
+
+def motores_diferentes(n_linhas):
+    """Pares (query, formato) que correram nos dois motores com n.º de linhas diferente.
+
+    Os valores podem diferir (a mediana da 03 é aproximada no Athena), mas o n.º de linhas não.
+    """
+    diferentes = []
+    for (q, f, motor) in n_linhas:
+        if motor != 'duckdb' or (q, f, 'athena') not in n_linhas:
+            continue
+        if n_linhas[(q, f, 'duckdb')] != n_linhas[(q, f, 'athena')]:
+            diferentes.append((q, f))
+    return diferentes
+
+
 def main():
     """Corre cada query em cada motor e formato e regista os resultados em results/cloud_benchmarks.csv."""
     args = parse_args()
@@ -208,7 +205,7 @@ def main():
         resolve_buckets(aws)
         athena = Athena(aws)
 
-    queries = load_queries(imdb_disponivel(cloud_dir))
+    queries = load_queries()
     fontes_duckdb = duckdb_sources(cloud_dir)
     csv_resultados = cfg['paths']['results'] / 'cloud_benchmarks.csv'
     n_linhas = {}          # (query, formato, motor) -> n.º de linhas, para comparar os motores
@@ -220,42 +217,22 @@ def main():
         for fmt in formatos:
             if 'duckdb' in args.engines and not args.dry_run:
                 sql = Template(texto_duckdb).substitute(fontes_duckdb[fmt])
-                mediana, n = bench_duckdb(sql, args.runs)
-                n_linhas[(nome, fmt, 'duckdb')] = n
-                linhas_csv.append({
-                    'run_at': now(), 'dataset': ds, 'engine': 'duckdb', 'query': nome, 'formato': fmt,
-                    'runs': args.runs, 'median_s': round(mediana, 4), 'median_engine_s': '',
-                    'data_scanned_mb': '', 'n_rows': n})
-                print(f'  duckdb  {nome:30} {fmt:13} {mediana * 1000:9.1f} ms  {n:>8,} linhas')
+                linha = linha_duckdb(ds, nome, fmt, sql, args.runs)
+                n_linhas[(nome, fmt, 'duckdb')] = linha['n_rows']
+                linhas_csv.append(linha)
 
             if 'athena' in args.engines:
                 sql = read_sql(athena_file, ATHENA_SOURCES[fmt])
                 if args.dry_run:
                     print(f'\n-- athena {nome} [{fmt}]\n{sql};')
                     continue
-                try:
-                    r = bench_athena(athena, sql, aws['database'], args.runs)
-                except AthenaError as erro:
-                    sys.exit(f'[cloud_benchmark] ERRO no Athena ({nome}, {fmt}): {erro}')
+                linha, scanned_bytes = linha_athena(athena, aws['database'], ds, nome, fmt, sql, args.runs)
                 # O Athena cobra no mínimo 10 MB por query, mesmo que leia menos
-                bytes_athena += max(r['scanned_bytes'], MINIMO_COBRADO) * args.runs
-                n_linhas[(nome, fmt, 'athena')] = r['n_rows']
-                linhas_csv.append({
-                    'run_at': now(), 'dataset': ds, 'engine': 'athena', 'query': nome, 'formato': fmt,
-                    'runs': args.runs, 'median_s': round(r['median_s'], 4),
-                    'median_engine_s': round(r['median_engine_s'], 4),
-                    'data_scanned_mb': round(r['scanned_bytes'] / 1e6, 2), 'n_rows': r['n_rows']})
-                print(f"  athena  {nome:30} {fmt:13} {r['median_s'] * 1000:9.1f} ms  {r['n_rows']:>8,} linhas"
-                      f"  {r['scanned_bytes'] / 1e6:9.2f} MB lidos")
+                bytes_athena += max(scanned_bytes, MINIMO_COBRADO) * args.runs
+                n_linhas[(nome, fmt, 'athena')] = linha['n_rows']
+                linhas_csv.append(linha)
 
-    # O n.º de linhas tem de ser igual nos dois motores (os valores podem diferir na mediana da 03).
-    # Para cada (query, formato) que correu nos dois motores, compara-se o n.º de linhas.
-    diferentes = []
-    for (q, f, motor) in n_linhas:
-        if motor != 'duckdb' or (q, f, 'athena') not in n_linhas:
-            continue
-        if n_linhas[(q, f, 'duckdb')] != n_linhas[(q, f, 'athena')]:
-            diferentes.append((q, f))
+    diferentes = motores_diferentes(n_linhas)
     if usar_athena:
         print(f'[cloud_benchmark] Athena: {bytes_athena / 1e9:.2f} GB cobrados no total, '
               f'custo estimado {bytes_athena / 1e12 * USD_POR_TB:.4f} USD')
