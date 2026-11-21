@@ -33,15 +33,11 @@ Como correr:
 import argparse
 import subprocess
 import sys
-import threading
 import time
 
 from athena_common import (MENSAGEM_CREDENCIAIS, account_id, add_aws_args, aws_settings, boto3_session,
                            is_credentials_error, resolve_buckets)
 from common import DATASETS, ROOT, load_config
-
-# Ficheiros acima deste tamanho mostram a percentagem enviada durante o upload
-MOSTRAR_PROGRESSO_MB = 20
 
 
 def parse_args():
@@ -115,34 +111,6 @@ def remote_sizes(s3, bucket, prefix):
     return tamanhos
 
 
-class Progresso:
-    """Callback do upload_file: mostra a percentagem enviada na mesma linha do terminal.
-
-    O boto3 envia os ficheiros grandes em vários pedaços ao mesmo tempo e, depois de cada
-    pedaço, chama o callback com o n.º de bytes enviados. Usamos uma classe (e não uma função)
-    para guardar entre chamadas o total já enviado.
-    """
-
-    def __init__(self, nome, total):
-        """Guarda o nome e o tamanho do ficheiro e começa a contagem em 0 bytes."""
-        self.nome, self.total, self.enviado = nome, total, 0
-        self.ultimo = -1   # última percentagem mostrada (para não repetir a mesma)
-        # Como os pedaços vão em paralelo (várias threads), o lock garante que duas chamadas
-        # não atualizam self.enviado ao mesmo tempo.
-        self.lock = threading.Lock()
-
-    def __call__(self, n_bytes):
-        """Chamado pelo boto3 depois de cada pedaço: soma os bytes e mostra a percentagem."""
-        # __call__ permite usar o objeto como se fosse uma função: progresso(n_bytes)
-        # O "\r" volta ao início da linha, por isso a percentagem é reescrita no mesmo sítio.
-        with self.lock:
-            self.enviado += n_bytes
-            pct = int(self.enviado * 100 / self.total) if self.total else 100
-            if pct != self.ultimo:
-                self.ultimo = pct
-                print(f'\r    {self.nome}: {pct:3d}% de {self.total / 1e6:.1f} MB', end='', flush=True)
-
-
 def sync_to_s3(s3, cloud_dir, bucket, pasta):
     """Envia data/cloud/<pasta>/ para s3://bucket/<pasta>/, só os ficheiros novos ou com tamanho diferente."""
     remotos = remote_sizes(s3, bucket, f'{pasta}/')
@@ -159,12 +127,8 @@ def sync_to_s3(s3, cloud_dir, bucket, pasta):
         if remotos.get(chave) == tamanho:
             saltados += 1
             continue
-        if tamanho > MOSTRAR_PROGRESSO_MB * 1e6:
-            s3.upload_file(str(f), bucket, chave, Callback=Progresso(chave, tamanho))
-            print()
-        else:
-            s3.upload_file(str(f), bucket, chave)
-            print(f'    {chave} ({tamanho / 1e6:.2f} MB)')
+        print(f'    {chave} ({tamanho / 1e6:.2f} MB)', flush=True)
+        s3.upload_file(str(f), bucket, chave)
         enviados += 1
         bytes_enviados += tamanho
 
