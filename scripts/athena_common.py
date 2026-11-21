@@ -144,25 +144,17 @@ def read_sql(path, params):
 class Athena:
     """Cliente mínimo do Athena: submete uma query, espera pelo fim e devolve as estatísticas."""
 
-    def __init__(self, aws, athena_client=None, s3_client=None):
-        """Guarda os clientes boto3 do Athena e do S3, o workgroup e a pasta dos resultados."""
-        # Os clientes podem ser passados de fora (útil para testar sem AWS).
-        if athena_client is None or s3_client is None:
-            session = boto3_session(aws['region'])
-            athena_client = athena_client or session.client('athena')
-            s3_client = s3_client or session.client('s3')
-        self.athena = athena_client
-        self.s3 = s3_client
+    def __init__(self, aws):
+        """Cria os clientes boto3 do Athena e do S3 e guarda o workgroup e a pasta dos resultados."""
+        session = boto3_session(aws['region'])
+        self.athena = session.client('athena')
+        self.s3 = session.client('s3')
         self.workgroup = aws['workgroup']
         # Os resultados de cada query ficam num CSV (e um .metadata) nesta pasta do bucket de resultados
         self.output = f"s3://{aws['bucket_resultados']}/athena-results/{aws['database']}/"
 
     def _call(self, funcao, **kwargs):
-        """Chama a API e traduz os erros de credenciais numa mensagem clara.
-
-        **kwargs recebe os argumentos com nome (ex.: QueryExecutionId=...) e passa-os tal e qual
-        à função do boto3. Assim, todas as chamadas à AWS passam por este único try/except.
-        """
+        """Chama a API e traduz os erros de credenciais numa mensagem clara."""
         try:
             return funcao(**kwargs)
         except Exception as erro:
@@ -212,8 +204,13 @@ class Athena:
     def rows(self, query_id):
         """Linhas do resultado (sem o cabeçalho), como tuplos de texto. Só para resultados pequenos."""
         resposta = self._call(self.athena.get_query_results, QueryExecutionId=query_id, MaxResults=1000)
-        linhas = resposta['ResultSet']['Rows'][1:]   # a primeira linha é o cabeçalho
-        return [tuple(campo.get('VarCharValue') for campo in linha['Data']) for linha in linhas]
+        linhas = []
+        for linha in resposta['ResultSet']['Rows'][1:]:   # a primeira linha é o cabeçalho
+            valores = []
+            for campo in linha['Data']:
+                valores.append(campo.get('VarCharValue'))
+            linhas.append(tuple(valores))
+        return linhas
 
     def count_result_rows(self, output):
         """N.º de linhas do CSV de resultado no S3 (sem o cabeçalho).
@@ -223,5 +220,7 @@ class Athena:
         """
         url = urlparse(output)
         corpo = self._call(self.s3.get_object, Bucket=url.netloc, Key=url.path.lstrip('/'))['Body'].read()
-        leitor = csv.reader(io.StringIO(corpo.decode('utf-8')))
-        return max(sum(1 for _ in leitor) - 1, 0)
+        linhas = list(csv.reader(io.StringIO(corpo.decode('utf-8'))))
+        if not linhas:
+            return 0
+        return len(linhas) - 1   # sem o cabeçalho
