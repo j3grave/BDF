@@ -25,6 +25,7 @@ Saídas:
     results/pipeline_runs.csv   tempo de cada passo (acrescenta linhas)
 
 Como correr:
+    python run_pipeline.py                                       pergunta o dataset e se corre a cloud
     python run_pipeline.py --dataset small                       passos locais
     python run_pipeline.py --dataset 1m --steps ingest parquet   só alguns passos
     python run_pipeline.py --dataset 1m --coordenacao            com o teste de coordenação
@@ -67,6 +68,53 @@ def opcoes_extra(script, args):
     return opcoes
 
 
+def escolher(pergunta, opcoes, omissao):
+    """Mostra as opções numeradas e devolve o valor da escolhida (Enter escolhe a opção omissao)."""
+    print(pergunta)
+    for i, (rotulo, _) in enumerate(opcoes, 1):
+        marca = '  (Enter)' if i == omissao else ''
+        print(f'  {i}. {rotulo}{marca}')
+    while True:
+        resposta = input('> ').strip()
+        if resposta == '':
+            return opcoes[omissao - 1][1]
+        if resposta.isdigit() and 1 <= int(resposta) <= len(opcoes):
+            return opcoes[int(resposta) - 1][1]
+        print(f'  Escolhe um número de 1 a {len(opcoes)}.')
+
+
+def confirmar_credenciais(region):
+    """Confirma as credenciais AWS antes de começar. Se não forem válidas, espera que sejam atualizadas."""
+    # As chaves nunca são escritas no terminal: o pipeline só lê o ~/.aws/credentials
+    from athena_common import account_id, boto3_session
+    while True:
+        try:
+            account_id(boto3_session(region))
+            print('Credenciais AWS válidas.\n')
+            return
+        except SystemExit as erro:
+            print(erro)
+            input('\nDepois de atualizares o ~/.aws/credentials, carrega Enter para confirmar de novo '
+                  '(Ctrl+C para sair). ')
+
+
+def perguntar():
+    """Modo interativo: pergunta o dataset e o que correr. Devolve as opções da linha de comandos."""
+    cfg = load_config()
+    datasets = list(DATASETS)
+    dataset = escolher('Que dataset queres usar?', [(d, d) for d in datasets], datasets.index(cfg['dataset']) + 1)
+    steps = escolher('\nO que queres correr?',
+                     [('pipeline local (blocos 1 a 3)', STEPS_OMISSAO),
+                      ('pipeline local e cloud (blocos 1 a 4, usa a AWS)', STEPS_OMISSAO + ['cloud']),
+                      ('só a cloud (bloco 4, usa a AWS)', ['cloud'])], 1)
+    print()
+    if 'cloud' in steps:
+        confirmar_credenciais(cfg['aws']['region'])
+    opcoes = ['--dataset', dataset, '--steps'] + steps
+    print('Comando equivalente: python run_pipeline.py ' + ' '.join(opcoes) + '\n')
+    return opcoes
+
+
 def main():
     """Lê as opções e corre cada passo pedido, registando o tempo em results/pipeline_runs.csv."""
     parser = argparse.ArgumentParser(description=__doc__,
@@ -79,7 +127,14 @@ def main():
     parser.add_argument('--bucket-dados', dest='bucket_dados', help='só passo cloud: bucket com data/cloud/<pasta>/')
     parser.add_argument('--bucket-resultados', dest='bucket_resultados',
                         help='só passo cloud: bucket dos resultados do Athena')
-    args = parser.parse_args()
+    # Sem opções e num terminal, pergunta o que correr; com opções (ou sem terminal) usa-as tal e qual
+    if len(sys.argv) == 1 and sys.stdin.isatty():
+        try:
+            args = parser.parse_args(perguntar())
+        except (KeyboardInterrupt, EOFError):
+            sys.exit('\nCancelado.')
+    else:
+        args = parser.parse_args()
     cfg = load_config(args.dataset)
 
     for step in args.steps:
