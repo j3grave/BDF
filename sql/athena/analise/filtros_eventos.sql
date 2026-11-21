@@ -1,5 +1,4 @@
 -- filtros_eventos.sql (Athena) - equivalente a sql/analise/filtros_eventos.sql
--- Origem: notebook do Luís, célula 112 ("novo-advanced"): dias_filme, view "eventos" e "filtros".
 --
 -- A tabela filme x dia (14,7 M linhas no 32M) só existe como CTE: o resultado devolvido é
 -- uma linha. Se for precisa para outras análises, cria-se com CTAS em Parquet
@@ -7,7 +6,7 @@
 -- nunca como resultado devolvido ao cliente.
 -- Dia: "timestamp" / 86400 (no Trino, bigint / bigint é divisão inteira = dia UTC); não há
 -- conversão de fuso.
--- Limites do capítulo 9 do notebook (P7), na CTE lim, a decidir com o Luís.
+-- Limites na CTE lim, iguais aos de eventos.sql.
 -- Frações com CAST(... AS double): no Trino, count_if(...) * 1.0 / COUNT(*) ficaria com a
 -- escala do literal 1.0 (1 casa decimal) e 0.51 seria comparado com 0.5.
 --

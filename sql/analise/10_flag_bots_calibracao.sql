@@ -1,13 +1,11 @@
 -- 10_flag_bots_calibracao.sql (DuckDB) - distribuição do ritmo sustentado e n.º de sinalizados
 -- por limiar, para calibrar a regra A de 10_flag_bots.sql
 --
--- *** A VALIDAR COM O LUÍS *** (faz parte da deteção que substitui a regra do notebook)
---
 -- Pergunta: como se distribui o máximo de eventos numa janela de 10 min, depois das primeiras
 -- 24 h, e quantos utilizadores ficariam sinalizados com o limiar no p99, no p99,5 e no p99,9?
 -- Inclui também os totais de cada regra e categoria, e a taxa de sinalizados.
 --
--- Lê a tabela por utilizador de 10_flag_bots.sql (${flag_bots}); o 05_analises.py corre-a
+-- Lê a tabela por utilizador de 10_flag_bots.sql (${flag_bots}); o 04_analise.py corre-a
 -- antes. Resultado agregado: uma linha.
 --
 -- Parâmetros: ${flag_bots}

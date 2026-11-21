@@ -1,6 +1,6 @@
 # Coordenação entre contas · MovieLens 32m
 
-Gerado por `scripts/06_coordenacao.py` (sessão DuckDB em UTC, memory_limit 12GB, fonte Parquet). **A validar com o Luís.**
+Gerado por `scripts/04_analise.py` (sessão DuckDB em UTC, memory_limit 12GB, fonte Parquet).
 
 ## Tempos
 

@@ -1,5 +1,4 @@
 -- filmes_ano.sql (Athena) - equivalente a sql/analise/filmes_ano.sql
--- Origem: notebook do Luís, célula 112 ("novo-advanced"), consulta "filmes_ano".
 --
 -- Mesmas CTEs de sql/athena/analise/evolucao_filmes.sql (só anos completos); os dois filmes
 -- são escolhidos com ROW_NUMBER() (em vez de UNION de subqueries com LIMIT).

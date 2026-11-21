@@ -1,6 +1,6 @@
 # Análises · MovieLens small
 
-Gerado por `scripts/05_analises.py` em 0.2 s (sessão DuckDB em UTC).
+Gerado por `scripts/04_analise.py` em 0.2 s (sessão DuckDB em UTC).
 
 ## Fontes
 
@@ -16,10 +16,10 @@ Gerado por `scripts/05_analises.py` em 0.2 s (sessão DuckDB em UTC).
 | qualidade: pares (utilizador, filme) repetidos | 0 | sim |
 | integridade: ids de filmes repetidos = 0 | 0 | sim |
 | integridade: avaliações sem filme = 0 | 0 | sim |
-| linhas = n_ratings do 04_eda.py | 100836 / 100836 | sim |
-| utilizadores = n_utilizadores do 04_eda.py | 610 / 610 | sim |
-| filmes = n_filmes_avaliados do 04_eda.py | 9724 / 9724 | sim |
-| média global = rating_media do 04_eda.py | 3.502 / 3.502 | sim |
+| linhas = n_ratings da EDA | 100836 / 100836 | sim |
+| utilizadores = n_utilizadores da EDA | 610 / 610 | sim |
+| filmes = n_filmes_avaliados da EDA | 9724 / 9724 | sim |
+| média global = rating_media da EDA | 3.502 / 3.502 | sim |
 | soma de anual.num_ratings = linhas | 100836 / 100836 | sim |
 | bots: utilizador 257 = sem sinais | sem sinais | sim |
 | bots: utilizador 7 = sem sinais | sem sinais | sim |
@@ -48,7 +48,7 @@ Gerado por `scripts/05_analises.py` em 0.2 s (sessão DuckDB em UTC).
 | qualidade | 1 | 0.006 | `qualidade.csv` |
 | valores_ano | 195 | 0.003 | `valores_ano.csv` |
 
-## Deteção de bots (10_flag_bots, a validar com o Luís)
+## Deteção de bots (10_flag_bots)
 
 - Utilizadores: 610; suspeitos: 2 (0.33%) = regra A 1 + regra B 1 (sem repetir quem tem as duas).
 - Submissão em lote (reportada à parte, não é bot): 13 utilizadores, dos quais 13 sem outra classificação.

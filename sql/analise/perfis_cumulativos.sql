@@ -1,14 +1,12 @@
 -- perfis_cumulativos.sql (DuckDB) - perfis de uso da escala na população acumulada
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 109 (id "novo-analytics"), consultas_complementares()["perfis_cumulativos"]. Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: como perfis_ativos, mas cada utilizador conta em todos os anos desde que entrou
 -- (mesmo nos anos sem atividade), com o histórico acumulado até esse ano.
 --
--- Alterações face ao original:
--- - year de ${ratings} (UTC) em vez de year(to_timestamp(timestamp)) (fuso, P1);
+-- Notas:
+-- - o ano é a coluna year de ${ratings} (UTC);
 -- - count_if, janela por extenso e GROUP BY 1, 2, como na versão Athena;
--- - rótulo "Só não inteiros" (P8).
+-- - rótulo "Só não inteiros".
 -- A grelha utilizadores x anos é intencional (no 32M, 200 948 x 29 = 5,8 M linhas), mas só
 -- existe como CTE: o resultado devolvido é agregado (no máximo 3 linhas por ano).
 --

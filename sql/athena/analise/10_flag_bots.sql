@@ -1,6 +1,5 @@
 -- 10_flag_bots.sql (Athena) - equivalente a sql/analise/10_flag_bots.sql
 --
--- *** A VALIDAR COM O LUÍS *** - substitui utilizadores_sinalizados (notebook, célula 112).
 -- A explicação das regras (eventos, submissão em lote, regras A e B, sinais complementares)
 -- está no cabeçalho da versão DuckDB.
 --

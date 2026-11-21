@@ -1,5 +1,4 @@
 -- grupos_atividade.sql (Athena) - equivalente a sql/analise/grupos_atividade.sql
--- Origem: notebook do Luís, célula 109 ("novo-analytics"), consultas_complementares()["grupos_atividade"].
 --
 -- Fuso horário: year vem das pastas de ratings_part ou de year(from_unixtime("timestamp")),
 -- e from_unixtime devolve UTC.

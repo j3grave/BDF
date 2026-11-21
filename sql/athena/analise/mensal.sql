@@ -1,5 +1,4 @@
 -- mensal.sql (Athena) - equivalente a sql/analise/mensal.sql
--- Origem: notebook do Luís, célula 109 ("novo-analytics"), consultas_complementares()["mensal"].
 --
 -- Fuso horário: from_unixtime("timestamp") devolve o instante em UTC (timestamp sem fuso da
 -- sessão), por isso o mês não depende de onde a query corre.

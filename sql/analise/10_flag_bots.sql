@@ -1,10 +1,7 @@
 -- 10_flag_bots.sql (DuckDB) - utilizadores com comportamento SUSPEITO (nunca "bot confirmado")
 --
--- *** A VALIDAR COM O LUÍS ***
--- Substitui a regra de utilizadores_sinalizados do notebook do Luís (célula 112, id
--- "novo-advanced", SQL_AVANCADO["utilizadores_sinalizados"], commit e51d050), que
--- sinalizava 34% dos utilizadores do small, sobretudo pelo pico normal do registo.
--- Está em sql/analise/ (e não em sql/, onde fica o esqueleto 10_flag_bots.sql do benchmark).
+-- Uma regra mais simples (muita atividade) sinalizava 34% dos utilizadores do small, sobretudo
+-- pelo pico normal do registo. Estas regras sinalizam menos de 1%.
 --
 -- Princípio: sinalizar o que não é fisicamente plausível para um humano, e não "muita
 -- atividade". O timestamp regista o momento em que a avaliação foi GRAVADA, não o clique:
@@ -14,7 +11,7 @@
 -- 1. Eventos de submissão: as avaliações com o mesmo (userId, timestamp) formam um evento;
 --    k = n.º de avaliações do evento. Todos os ritmos são medidos em eventos, não em avaliações.
 -- 2. Submissão em lote (NÃO é bot): utilizador com pelo menos um evento com >= 10 avaliações
---    no mesmo segundo (o limite 10 é o do sinal "mesmo_segundo" do Luís). Casos de referência
+--    no mesmo segundo. Casos de referência
 --    no small: 191, 429, 99, 163 (anos 90) e 534 (2016).
 -- 3. Regra A - ritmo sustentado não humano, fora do registo:
 --    - ignora as primeiras 24 h de cada utilizador (registo);
@@ -36,14 +33,14 @@
 --
 -- Saída: uma linha por utilizador (610 no small, 200 948 no 32M). Localmente vai para CSV;
 -- no Athena é um CTAS em Parquet (ver a versão Athena), nunca um resultado para o cliente.
--- O 05_analises.py guarda-a na tabela temporária ${flag_bots}, usada por
+-- O 04_analise.py guarda-a na tabela temporária ${flag_bots}, usada por
 -- 10_flag_bots_calibracao.sql e eventos.sql.
 --
 -- Parâmetros: ${ratings}
 WITH lim AS (SELECT 86400 AS registo_s,           -- primeiras 24 h de cada utilizador
                     100   AS regra_b_min_eventos,  -- "centenas de eventos"
                     2     AS regra_b_max_mediana_s,
-                    10    AS lote_min_avaliacoes), -- limite do sinal mesmo_segundo do Luís
+                    10    AS lote_min_avaliacoes), -- avaliações no mesmo segundo
      -- 1. Eventos de submissão
      ev AS (SELECT userId, timestamp AS ts, COUNT(*) AS k
             FROM ${ratings}

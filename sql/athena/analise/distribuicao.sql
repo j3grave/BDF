@@ -1,5 +1,4 @@
 -- distribuicao.sql (Athena) - equivalente a sql/analise/distribuicao.sql
--- Origem: notebook do Luís, célula 108 ("novo-queries"), consultas_sql()["distribuicao"].
 --
 -- Resultado agregado (no máximo 10 linhas, uma por valor). A tabela (utilizador, valor), que no
 -- 32M teria ~1,5 M linhas, só existe como CTE e nunca é devolvida ao cliente.

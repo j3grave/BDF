@@ -1,23 +1,17 @@
 -- eventos.sql (DuckDB) - dias em que um filme recebeu uma concentração de notas extremas que
 -- mudou a sua média, cruzados com os utilizadores suspeitos
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 112 (id "novo-advanced"): SQL_AVANCADO["dias_filme"], a view "eventos" e a
---         consulta dos participantes (gravada em eventos_filme.parquet). Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: em que (filme, dia) houve muitas notas extremas no mesmo sentido, com a média do dia
 -- afastada do histórico anterior do filme? Quantos dos utilizadores desse dia são suspeitos?
 --
--- Alterações face ao original:
--- - dias_filme e a view eventos só existem como CTEs (d, h, v, ev): a tabela filme x dia
---   (14,7 M linhas no 32M) nunca é devolvida (relatório, P6);
--- - o cruzamento passa a usar a nova deteção (10_flag_bots.sql, tabela ${flag_bots}):
---   suspeitos = regra A ou regra B; em_lote = submissão em lote (conta-se à parte, não é bot).
---   O original usava num_sinais > 0 da regra antiga, que sinalizava 34% dos utilizadores;
--- - LIMIT 100 (justificado): devolve os 100 eventos com mais suspeitos, para inspeção manual.
---   O total de eventos está na coluna total_eventos e no funil (filtros_eventos.sql); no 32M,
---   com estes limites, o notebook registou 90 108 eventos;
--- - limites na CTE lim, os do capítulo 9 (P7), iguais aos de filtros_eventos.sql, a decidir
---   com o Luís; COUNT(DISTINCT CASE ...) em vez de FILTER, como na versão Athena;
+-- Notas:
+-- - a tabela filme x dia (14,7 M linhas no 32M) só existe como CTE (d, h, v, ev) e nunca é devolvida;
+-- - os suspeitos vêm de 10_flag_bots.sql (tabela ${flag_bots}): regra A ou regra B; em_lote =
+--   submissão em lote (conta-se à parte, não é bot);
+-- - LIMIT 100: devolve os 100 eventos com mais suspeitos, para inspeção. O total de eventos
+--   está na coluna total_eventos e no funil (filtros_eventos.sql);
+-- - os limites estão na CTE lim e são os mesmos de filtros_eventos.sql;
+-- - COUNT(DISTINCT CASE ...) em vez de FILTER, como na versão Athena;
 -- - dia como data (UTC): timestamp // 86400 é o n.º do dia desde 1970-01-01 em UTC.
 --
 -- Parâmetros: ${ratings}, ${movies}, ${flag_bots}
