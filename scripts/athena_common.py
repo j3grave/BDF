@@ -23,6 +23,7 @@ Como correr:
 import csv
 import io
 import platform
+import sys
 import time
 from string import Template
 from urllib.parse import urlparse
@@ -102,7 +103,13 @@ def boto3_session(region):
     try:
         import boto3
     except ImportError:
-        raise SystemExit('Erro: falta o boto3. Instala-o com: pip install -r requirements.txt') from None
+        # Quase sempre é o Python errado (por exemplo, o do conda em vez do .venv do projeto),
+        # por isso a mensagem mostra qual é o Python em uso
+        ativar = r'.venv\Scripts\activate' if platform.system() == 'Windows' else 'source .venv/bin/activate'
+        raise SystemExit(
+            f'Erro: falta o boto3 neste Python ({sys.executable}).\n'
+            f'Ativa o ambiente do projeto ({ativar}) ou instala com:\n'
+            '  python -m pip install -r requirements.txt') from None
     return boto3.Session(region_name=region)
 
 
