@@ -30,24 +30,16 @@ Como correr:
     python scripts/prepare_cloud.py               (por omissão usa o dataset do config.yaml)
     O envio para o S3 é feito pelo passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
-import argparse
 import shutil
 import sys
 import time
 
 import duckdb
 
-from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config, now, size_on_disk
+from common import ROOT, SCHEMAS, duckdb_columns, load_config, now, parse_args, size_on_disk
 
 # Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
 ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
-
-def parse_args():
-    """Lê a opção --dataset (small | 1m | 32m; por omissão, o do config.yaml, como nos outros passos)."""
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset', choices=list(DATASETS), help='dataset a preparar (sobrepõe o valor de config.yaml)')
-    return parser.parse_args()
 
 
 def mb(path):
@@ -387,22 +379,8 @@ def verificar_csv(con, csv_file, csv_dst, n_ratings, problemas):
             'linhas': n_csv, 'compressao': 'nenhuma (CSV)', 'schema': list(SCHEMAS['ratings'].items())}
 
 
-def main():
-    """Escreve data/cloud/<pasta>/, verifica tudo e, se estiver tudo certo, gera o manifesto."""
-    args = parse_args()
-    cfg = load_config(args.dataset)
-    ds = cfg['dataset']
-    pasta = cfg['source']['folder']          # ml-latest-small, ml-1m ou ml-32m
-    pq_dir = cfg['paths']['parquet']
-    csv_file = cfg['paths']['csv'] / 'ratings.csv'
-    fase1_part = pq_dir / 'ratings_by_year'
-    cloud_dir = ROOT / 'data' / 'cloud' / pasta
-    part_dir = cloud_dir / 'ratings_part'
-    manifest = ROOT / 'reports' / f'cloud_manifest_{ds}.md'
-    print(f'[prepare_cloud] dataset={ds} -> data/cloud/{pasta}/')
-
-    # 0. As entradas da fase 1 têm de existir. O 1M não tem tags nem links, por isso a lista
-    #    de tabelas é a das que existem em Parquet.
+def tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file):
+    """Tabelas que existem em Parquet (o 1M não tem tags nem links). Termina se faltar alguma entrada."""
     tables = []
     for t in SCHEMAS:
         if (pq_dir / f'{t}.parquet').exists():
@@ -414,6 +392,54 @@ def main():
     if em_falta:
         sys.exit('Erro: faltam ficheiros da fase 1: ' + ', '.join(em_falta) +
                  f'\nCorre primeiro: python run_pipeline.py --dataset {ds} --steps ingest parquet')
+    return tables
+
+
+def verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part, csv_file, csv_dst):
+    """Corre todas as verificações e mostra um resumo. Se alguma falhar, termina com erro.
+
+    Devolve (info_tabelas, info_comp, particoes) para o manifesto.
+    """
+    print('[prepare_cloud] verificações')
+    # Juntam-se todos os problemas numa lista, para os mostrar de uma vez
+    problemas = check_structure(cloud_dir, tables)
+    info_tabelas, info_comp = verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas)
+    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira tabela do SCHEMAS
+    schema_ratings = info_tabelas[0]['schema']
+    particoes, info_part, comp_part = verificar_particoes(con, ds, cloud_dir / 'ratings_part', fase1_part,
+                                                          n_ratings, schema_ratings, problemas)
+    info_csv = verificar_csv(con, csv_file, csv_dst, n_ratings, problemas)
+    # No manifesto, ratings_part e ratings_csv aparecem logo a seguir a ratings
+    info_tabelas.insert(1, info_part)
+    info_tabelas.insert(2, info_csv)
+    info_comp.insert(1, comp_part)
+
+    for t in info_tabelas:
+        print(f'  {t["nome"]:12} {t["linhas"]:>12,} linhas  {t["ficheiros"]:>3} ficheiro(s)  {t["mb"]:>8.2f} MB')
+
+    if problemas:
+        print('[prepare_cloud] ERRO: as verificações falharam; o manifesto não foi gerado.', file=sys.stderr)
+        for p in problemas:
+            print(f'  - {p}', file=sys.stderr)
+        sys.exit(1)
+    return info_tabelas, info_comp, particoes
+
+
+def main():
+    """Escreve data/cloud/<pasta>/, verifica tudo e, se estiver tudo certo, gera o manifesto."""
+    args = parse_args(__doc__)
+    cfg = load_config(args.dataset)
+    ds = cfg['dataset']
+    pasta = cfg['source']['folder']          # ml-latest-small, ml-1m ou ml-32m
+    pq_dir = cfg['paths']['parquet']
+    csv_file = cfg['paths']['csv'] / 'ratings.csv'
+    fase1_part = pq_dir / 'ratings_by_year'
+    cloud_dir = ROOT / 'data' / 'cloud' / pasta
+    part_dir = cloud_dir / 'ratings_part'
+    manifest = ROOT / 'reports' / f'cloud_manifest_{ds}.md'
+    print(f'[prepare_cloud] dataset={ds} -> data/cloud/{pasta}/')
+
+    tables = tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file)
 
     # Um manifesto antigo deixaria de corresponder aos ficheiros: apaga-se já, e só se
     # volta a escrever no fim, se todas as verificações passarem.
@@ -438,28 +464,9 @@ def main():
     particionar_ratings(con, pq_dir, part_dir)
     csv_dst = copiar_csv(csv_file, cloud_dir)
 
-    # 4. Verificações. Juntam-se todos os problemas numa lista para os mostrar de uma vez.
-    print('[prepare_cloud] verificações')
-    problemas = check_structure(cloud_dir, tables)
-    info_tabelas, info_comp = verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas)
-    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira tabela do SCHEMAS
-    schema_ratings = info_tabelas[0]['schema']
-    particoes, info_part, comp_part = verificar_particoes(con, ds, part_dir, fase1_part, n_ratings,
-                                                          schema_ratings, problemas)
-    info_csv = verificar_csv(con, csv_file, csv_dst, n_ratings, problemas)
-    # No manifesto, ratings_part e ratings_csv aparecem logo a seguir a ratings
-    info_tabelas.insert(1, info_part)
-    info_tabelas.insert(2, info_csv)
-    info_comp.insert(1, comp_part)
-
-    for t in info_tabelas:
-        print(f'  {t["nome"]:12} {t["linhas"]:>12,} linhas  {t["ficheiros"]:>3} ficheiro(s)  {t["mb"]:>8.2f} MB')
-
-    if problemas:
-        print('[prepare_cloud] ERRO: as verificações falharam; o manifesto não foi gerado.', file=sys.stderr)
-        for p in problemas:
-            print(f'  - {p}', file=sys.stderr)
-        sys.exit(1)
+    # 4. Verificações
+    info_tabelas, info_comp, particoes = verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part,
+                                                        csv_file, csv_dst)
 
     # 5. Manifesto
     write_manifest(manifest, {'dataset': ds, 'pasta': pasta, 'gerado_em': now(),
