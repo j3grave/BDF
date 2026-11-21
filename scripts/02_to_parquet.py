@@ -30,81 +30,76 @@ import duckdb
 from common import SCHEMAS, append_row, duckdb_columns, load_config, now, parse_args, size_on_disk
 
 
+def converter_tabela(con, ds, table, schema, csv_file, pq_file):
+    """CSV -> Parquet sem partição. Devolve a linha para o results/sizes.csv."""
+    # Aspas duplicadas "" dentro dos títulos (CSV standard) e tipos fixos, iguais nos três datasets
+    t0 = time.perf_counter()
+    con.execute(f"""
+        COPY (SELECT * FROM read_csv('{csv_file.as_posix()}', header=true, delim=',',
+                                      quote='"', escape='"', columns={duckdb_columns(schema)}))
+        TO '{pq_file.as_posix()}' (FORMAT parquet)
+    """)
+    # As colunas "by_year" só são preenchidas para os ratings (ver particionar_ratings)
+    return {
+        'run_at': now(),
+        'dataset': ds,
+        'table': table,
+        'csv_mb': round(size_on_disk(csv_file) / 1e6, 2),
+        'parquet_mb': round(size_on_disk(pq_file) / 1e6, 2),
+        'parquet_by_year_mb': '',
+        'n_partitions': '',
+        'seconds': round(time.perf_counter() - t0, 3),
+        'seconds_by_year': '',
+    }
+
+
+def particionar_ratings(con, pq_file, part_dir, row):
+    """Parquet -> Parquet particionado por ano (year=2015/...) e preenche as colunas by_year de row.
+
+    Uma query que filtre ou agrupe por ano lê só as pastas de que precisa (partition pruning).
+    """
+    # O COPY particionado não substitui pastas que já existem
+    if part_dir.exists():
+        shutil.rmtree(part_dir)
+    # epoch_ms devolve TIMESTAMP sem fuso horário, por isso o ano não depende da máquina
+    t0 = time.perf_counter()
+    con.execute(f"""
+        COPY (SELECT *, year(epoch_ms(timestamp * 1000)) AS year
+              FROM read_parquet('{pq_file.as_posix()}'))
+        TO '{part_dir.as_posix()}' (FORMAT parquet, PARTITION_BY (year))
+    """)
+    row['seconds_by_year'] = round(time.perf_counter() - t0, 3)
+    row['parquet_by_year_mb'] = round(size_on_disk(part_dir) / 1e6, 2)
+    row['n_partitions'] = len(list(part_dir.glob('year=*')))
+
+
 def main():
     """Converte cada CSV em Parquet, particiona os ratings por ano e regista tamanhos e tempos."""
     args = parse_args(__doc__)
     cfg = load_config(args.dataset)
-    paths = cfg['paths']
     ds = cfg['dataset']
-    csv_dir = paths['csv']
-    pq_dir = paths['parquet']
+    pq_dir = cfg['paths']['parquet']
     pq_dir.mkdir(parents=True, exist_ok=True)
     print(f'[to_parquet] dataset={ds}')
 
     con = duckdb.connect()
-    # Por omissão o DuckDB mantém a ordem original das linhas, o que obriga a guardar mais
-    # dados em memória. A ordem não interessa aqui, e desligá-la poupa memória no 32M.
+    # A ordem das linhas não interessa aqui, e desligá-la poupa memória no 32M
     con.execute('SET preserve_insertion_order = false')
 
     for table, schema in SCHEMAS.items():
-        csv_file = csv_dir / f'{table}.csv'
+        csv_file = cfg['paths']['csv'] / f'{table}.csv'
         if not csv_file.exists():
             continue   # o 1M não tem tags nem links
         pq_file = pq_dir / f'{table}.parquet'
 
-        # 1. CSV -> Parquet sem partição.
-        # As opções de aspas indicam o CSV standard (aspas duplicadas "" dentro dos títulos)
-        # e os tipos fixos garantem o mesmo esquema em todos os datasets.
-        columns = duckdb_columns(schema)
-        t0 = time.perf_counter()
-        con.execute(f"""
-            COPY (SELECT * FROM read_csv('{csv_file.as_posix()}', header=true, delim=',',
-                                          quote='"', escape='"', columns={columns}))
-            TO '{pq_file.as_posix()}' (FORMAT parquet)
-        """)
-        seconds = time.perf_counter() - t0
-
-        # Linha para results/sizes.csv. As colunas "by_year" ficam vazias nas tabelas não particionadas.
-        row = {
-            'run_at': now(),
-            'dataset': ds,
-            'table': table,
-            'csv_mb': round(size_on_disk(csv_file) / 1e6, 2),
-            'parquet_mb': round(size_on_disk(pq_file) / 1e6, 2),
-            'parquet_by_year_mb': '',
-            'n_partitions': '',
-            'seconds': round(seconds, 3),
-            'seconds_by_year': '',
-        }
-
-        # 2. Só os ratings: Parquet -> Parquet particionado por ano.
-        # PARTITION_BY cria uma pasta por valor de year (year=2015/...). Uma query que filtre
-        # ou agrupe por ano pode então ler só as pastas de que precisa (partition pruning).
-        if table == 'ratings':
-            part_dir = pq_dir / 'ratings_by_year'
-            # Apaga a versão anterior: o COPY particionado não substitui pastas que já existem
-            if part_dir.exists():
-                shutil.rmtree(part_dir)
-
-            # epoch_ms devolve TIMESTAMP sem fuso horário, por isso o ano não depende da máquina
-            t0 = time.perf_counter()
-            con.execute(f"""
-                COPY (SELECT *, year(epoch_ms(timestamp * 1000)) AS year
-                      FROM read_parquet('{pq_file.as_posix()}'))
-                TO '{part_dir.as_posix()}' (FORMAT parquet, PARTITION_BY (year))
-            """)
-            row['seconds_by_year'] = round(time.perf_counter() - t0, 3)
-            row['parquet_by_year_mb'] = round(size_on_disk(part_dir) / 1e6, 2)
-            row['n_partitions'] = len(list(part_dir.glob('year=*')))
-
-        append_row(paths['results'] / 'sizes.csv', row)
-
-        # Resumo no ecrã
+        row = converter_tabela(con, ds, table, schema, csv_file, pq_file)
         mensagem = (f"  {table:8} CSV {row['csv_mb']:>9.2f} MB -> Parquet {row['parquet_mb']:>8.2f} MB"
                     f" em {row['seconds']:.2f} s")
         if table == 'ratings':
+            particionar_ratings(con, pq_file, pq_dir / 'ratings_by_year', row)
             mensagem += (f" | por ano {row['parquet_by_year_mb']:.2f} MB em {row['n_partitions']} partições,"
                          f" {row['seconds_by_year']:.2f} s")
+        append_row(cfg['paths']['results'] / 'sizes.csv', row)
         print(mensagem)
 
 
