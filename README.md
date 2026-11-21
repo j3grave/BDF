@@ -61,7 +61,6 @@ BDF/
 │       ├── ddl/                 # CREATE TABLE do Athena
 │       ├── queries/             # queries 01 a 06 em Trino
 │       └── analise/             # as 16 queries de sql/analise/ em Trino
-├── docs/revisao_fase2.md        # revisão do código antes do merge da fase 2
 ├── reports/                     # manifestos da preparação para a cloud
 ├── results/                     # resultados leves (CSV, PNG e relatórios .md)
 └── data/                        # não versionado: downloads, CSV, Parquet e data/cloud/
