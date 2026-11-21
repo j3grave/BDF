@@ -23,15 +23,19 @@ Entradas:
 Saídas:
     As de cada script (ver o cabeçalho de cada um), mais
     results/pipeline_runs.csv   tempo de cada passo (acrescenta linhas)
+    Com --resultados-locais, tudo o que iria para results/ vai para results_local/, que não está
+    no git: assim uma corrida de teste não deixa alterações para commit.
 
 Como correr:
     python run_pipeline.py                                       pergunta o dataset e se corre a cloud
     python run_pipeline.py --dataset small                       passos locais
+    python run_pipeline.py --dataset small --resultados-locais   o mesmo, sem mexer em results/
     python run_pipeline.py --dataset 1m --steps ingest parquet   só alguns passos
     python run_pipeline.py --dataset 1m --coordenacao            com o teste de coordenação
     python run_pipeline.py --dataset small --steps cloud         bloco cloud (AWS Academy Learner Lab)
 """
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -107,10 +111,15 @@ def perguntar():
                      [('pipeline local (blocos 1 a 3)', STEPS_OMISSAO),
                       ('pipeline local e cloud (blocos 1 a 4, usa a AWS)', STEPS_OMISSAO + ['cloud']),
                       ('só a cloud (bloco 4, usa a AWS)', ['cloud'])], 1)
+    locais = escolher('\nQueres atualizar os resultados do repositório (results/)?',
+                      [('não: grava em results_local/, fora do git (para testar)', True),
+                       ('sim: grava em results/ e ficam alterações para commit', False)], 1)
     print()
     if 'cloud' in steps:
         confirmar_credenciais(cfg['aws']['region'])
     opcoes = ['--dataset', dataset, '--steps'] + steps
+    if locais:
+        opcoes.append('--resultados-locais')
     print('Comando equivalente: python run_pipeline.py ' + ' '.join(opcoes) + '\n')
     return opcoes
 
@@ -124,6 +133,8 @@ def main():
                         help=f"por omissão: {' '.join(STEPS_OMISSAO)} (o cloud só com --steps cloud)")
     parser.add_argument('--coordenacao', action='store_true',
                         help='passo analise: corre também o teste de coordenação (cerca de 10 min no 32M)')
+    parser.add_argument('--resultados-locais', action='store_true',
+                        help='grava os resultados em results_local/ (fora do git) em vez de results/')
     parser.add_argument('--bucket-dados', dest='bucket_dados', help='só passo cloud: bucket com data/cloud/<pasta>/')
     parser.add_argument('--bucket-resultados', dest='bucket_resultados',
                         help='só passo cloud: bucket dos resultados do Athena')
@@ -135,7 +146,11 @@ def main():
             sys.exit('\nCancelado.')
     else:
         args = parser.parse_args()
+    if args.resultados_locais:
+        # Os scripts correm em processos separados e herdam esta variável (ver common.load_config)
+        os.environ['BDF_RESULTS_DIR'] = 'results_local'
     cfg = load_config(args.dataset)
+    print(f"Resultados em {cfg['paths']['results'].relative_to(ROOT)}/\n", flush=True)
 
     for step in args.steps:
         t0 = time.perf_counter()

@@ -1,6 +1,6 @@
 # Análises · MovieLens 32m
 
-Gerado por `scripts/04_analise.py` em 10.7 s (sessão DuckDB em UTC).
+Gerado por `scripts/04_analise.py` em 8.2 s (sessão DuckDB em UTC).
 
 ## Fontes
 
@@ -26,22 +26,22 @@ Gerado por `scripts/04_analise.py` em 10.7 s (sessão DuckDB em UTC).
 
 | Query | Linhas | Segundos | CSV |
 |---|---:|---:|---|
-| 10_flag_bots | 200948 | 1.750 | `10_flag_bots.csv` |
-| 10_flag_bots_calibracao | 1 | 0.007 | `10_flag_bots_calibracao.csv` |
-| anual | 29 | 0.116 | `anual.csv` |
-| distribuicao | 10 | 0.087 | `distribuicao.csv` |
-| eventos | 100 | 3.813 | `eventos.csv` |
-| evolucao_filmes | 14758 | 0.187 | `evolucao_filmes.csv` |
-| filmes_ano | 22 | 0.214 | `filmes_ano.csv` |
-| filtros_eventos | 1 | 2.572 | `filtros_eventos.csv` |
-| grupos_atividade | 142 | 0.134 | `grupos_atividade.csv` |
-| integridade | 1 | 0.040 | `integridade.csv` |
-| mensal | 334 | 0.245 | `mensal.csv` |
-| perfis_ativos | 67 | 0.140 | `perfis_ativos.csv` |
-| perfis_cumulativos | 70 | 0.665 | `perfis_cumulativos.csv` |
-| ponderado | 10 | 0.051 | `ponderado.csv` |
-| qualidade | 1 | 0.349 | `qualidade.csv` |
-| valores_ano | 248 | 0.100 | `valores_ano.csv` |
+| 10_flag_bots | 200948 | 1.562 | `10_flag_bots.csv` |
+| 10_flag_bots_calibracao | 1 | 0.006 | `10_flag_bots_calibracao.csv` |
+| anual | 29 | 0.101 | `anual.csv` |
+| distribuicao | 10 | 0.074 | `distribuicao.csv` |
+| eventos | 100 | 2.546 | `eventos.csv` |
+| evolucao_filmes | 14758 | 0.157 | `evolucao_filmes.csv` |
+| filmes_ano | 22 | 0.168 | `filmes_ano.csv` |
+| filtros_eventos | 1 | 2.077 | `filtros_eventos.csv` |
+| grupos_atividade | 142 | 0.109 | `grupos_atividade.csv` |
+| integridade | 1 | 0.048 | `integridade.csv` |
+| mensal | 334 | 0.161 | `mensal.csv` |
+| perfis_ativos | 67 | 0.131 | `perfis_ativos.csv` |
+| perfis_cumulativos | 70 | 0.564 | `perfis_cumulativos.csv` |
+| ponderado | 10 | 0.049 | `ponderado.csv` |
+| qualidade | 1 | 0.286 | `qualidade.csv` |
+| valores_ano | 248 | 0.073 | `valores_ano.csv` |
 
 ## Deteção de bots (10_flag_bots)
 

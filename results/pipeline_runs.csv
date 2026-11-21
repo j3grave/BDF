@@ -59,3 +59,7 @@ run_at,dataset,step,seconds
 2026-11-21T16:58:10,small,parquet,0.1
 2026-11-21T16:58:10,small,benchmark,0.25
 2026-11-21T16:58:12,small,analise,1.73
+2026-11-21T20:41:38,32m,ingest,0.45
+2026-11-21T20:41:39,32m,parquet,1.19
+2026-11-21T20:41:43,32m,benchmark,4.34
+2026-11-21T20:41:54,32m,analise,11.17
