@@ -149,6 +149,44 @@ def bench_athena(athena, sql, database, runs):
     }
 
 
+def linha_duckdb(ds, nome, fmt, sql, runs):
+    """Corre uma query no DuckDB, mostra o tempo e devolve a linha para o cloud_benchmarks.csv."""
+    mediana, n = bench_duckdb(sql, runs)
+    print(f'  duckdb  {nome:30} {fmt:13} {mediana * 1000:9.1f} ms  {n:>8,} linhas')
+    return {'run_at': now(), 'dataset': ds, 'engine': 'duckdb', 'query': nome, 'formato': fmt,
+            'runs': runs, 'median_s': round(mediana, 4), 'median_engine_s': '',
+            'data_scanned_mb': '', 'n_rows': n}
+
+
+def linha_athena(athena, database, ds, nome, fmt, sql, runs):
+    """Corre uma query no Athena e devolve a linha para o CSV e os bytes lidos por corrida."""
+    try:
+        r = bench_athena(athena, sql, database, runs)
+    except AthenaError as erro:
+        sys.exit(f'[cloud_benchmark] ERRO no Athena ({nome}, {fmt}): {erro}')
+    print(f"  athena  {nome:30} {fmt:13} {r['median_s'] * 1000:9.1f} ms  {r['n_rows']:>8,} linhas"
+          f"  {r['scanned_bytes'] / 1e6:9.2f} MB lidos")
+    linha = {'run_at': now(), 'dataset': ds, 'engine': 'athena', 'query': nome, 'formato': fmt,
+             'runs': runs, 'median_s': round(r['median_s'], 4),
+             'median_engine_s': round(r['median_engine_s'], 4),
+             'data_scanned_mb': round(r['scanned_bytes'] / 1e6, 2), 'n_rows': r['n_rows']}
+    return linha, r['scanned_bytes']
+
+
+def motores_diferentes(n_linhas):
+    """Pares (query, formato) que correram nos dois motores com n.º de linhas diferente.
+
+    Os valores podem diferir (a mediana da 03 é aproximada no Athena), mas o n.º de linhas não.
+    """
+    diferentes = []
+    for (q, f, motor) in n_linhas:
+        if motor != 'duckdb' or (q, f, 'athena') not in n_linhas:
+            continue
+        if n_linhas[(q, f, 'duckdb')] != n_linhas[(q, f, 'athena')]:
+            diferentes.append((q, f))
+    return diferentes
+
+
 def main():
     """Corre cada query em cada motor e formato e regista os resultados em results/cloud_benchmarks.csv."""
     args = parse_args()
@@ -179,42 +217,22 @@ def main():
         for fmt in formatos:
             if 'duckdb' in args.engines and not args.dry_run:
                 sql = Template(texto_duckdb).substitute(fontes_duckdb[fmt])
-                mediana, n = bench_duckdb(sql, args.runs)
-                n_linhas[(nome, fmt, 'duckdb')] = n
-                linhas_csv.append({
-                    'run_at': now(), 'dataset': ds, 'engine': 'duckdb', 'query': nome, 'formato': fmt,
-                    'runs': args.runs, 'median_s': round(mediana, 4), 'median_engine_s': '',
-                    'data_scanned_mb': '', 'n_rows': n})
-                print(f'  duckdb  {nome:30} {fmt:13} {mediana * 1000:9.1f} ms  {n:>8,} linhas')
+                linha = linha_duckdb(ds, nome, fmt, sql, args.runs)
+                n_linhas[(nome, fmt, 'duckdb')] = linha['n_rows']
+                linhas_csv.append(linha)
 
             if 'athena' in args.engines:
                 sql = read_sql(athena_file, ATHENA_SOURCES[fmt])
                 if args.dry_run:
                     print(f'\n-- athena {nome} [{fmt}]\n{sql};')
                     continue
-                try:
-                    r = bench_athena(athena, sql, aws['database'], args.runs)
-                except AthenaError as erro:
-                    sys.exit(f'[cloud_benchmark] ERRO no Athena ({nome}, {fmt}): {erro}')
+                linha, scanned_bytes = linha_athena(athena, aws['database'], ds, nome, fmt, sql, args.runs)
                 # O Athena cobra no mínimo 10 MB por query, mesmo que leia menos
-                bytes_athena += max(r['scanned_bytes'], MINIMO_COBRADO) * args.runs
-                n_linhas[(nome, fmt, 'athena')] = r['n_rows']
-                linhas_csv.append({
-                    'run_at': now(), 'dataset': ds, 'engine': 'athena', 'query': nome, 'formato': fmt,
-                    'runs': args.runs, 'median_s': round(r['median_s'], 4),
-                    'median_engine_s': round(r['median_engine_s'], 4),
-                    'data_scanned_mb': round(r['scanned_bytes'] / 1e6, 2), 'n_rows': r['n_rows']})
-                print(f"  athena  {nome:30} {fmt:13} {r['median_s'] * 1000:9.1f} ms  {r['n_rows']:>8,} linhas"
-                      f"  {r['scanned_bytes'] / 1e6:9.2f} MB lidos")
+                bytes_athena += max(scanned_bytes, MINIMO_COBRADO) * args.runs
+                n_linhas[(nome, fmt, 'athena')] = linha['n_rows']
+                linhas_csv.append(linha)
 
-    # O n.º de linhas tem de ser igual nos dois motores (os valores podem diferir na mediana da 03).
-    # Para cada (query, formato) que correu nos dois motores, compara-se o n.º de linhas.
-    diferentes = []
-    for (q, f, motor) in n_linhas:
-        if motor != 'duckdb' or (q, f, 'athena') not in n_linhas:
-            continue
-        if n_linhas[(q, f, 'duckdb')] != n_linhas[(q, f, 'athena')]:
-            diferentes.append((q, f))
+    diferentes = motores_diferentes(n_linhas)
     if usar_athena:
         print(f'[cloud_benchmark] Athena: {bytes_athena / 1e9:.2f} GB cobrados no total, '
               f'custo estimado {bytes_athena / 1e12 * USD_POR_TB:.4f} USD')
