@@ -20,7 +20,7 @@ Entradas:
 Saídas:
     data/cloud/<pasta>/ratings/ratings.parquet        ratings sem partição
     data/cloud/<pasta>/ratings_part/year=AAAA/*.parquet  ratings particionado por ano
-    data/cloud/<pasta>/movies/, tags/, links/         uma tabela por pasta (o 1M só tem movies)
+    data/cloud/<pasta>/movies/movies.parquet          movies
     data/cloud/<pasta>/ratings_csv/ratings.csv        cópia do CSV, byte a byte
     reports/cloud_manifest_<dataset>.md               manifesto (só se todas as verificações passarem)
     <pasta> é o nome da pasta do GroupLens: ml-latest-small, ml-1m ou ml-32m.
@@ -37,6 +37,9 @@ import time
 import duckdb
 
 from common import ROOT, SCHEMAS, duckdb_columns, load_config, now, parse_args, size_on_disk
+
+# Tabelas que vão para a cloud. O tags e o links não são usados por nenhuma query do Athena.
+TABELAS_CLOUD = ['ratings', 'movies']
 
 # Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
 ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
@@ -380,19 +383,15 @@ def verificar_csv(con, csv_file, csv_dst, n_ratings, problemas):
 
 
 def tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file):
-    """Tabelas que existem em Parquet (o 1M não tem tags nem links). Termina se faltar alguma entrada."""
-    tables = []
-    for t in SCHEMAS:
-        if (pq_dir / f'{t}.parquet').exists():
-            tables.append(t)
+    """Confirma que as entradas da fase 1 existem e devolve as tabelas a copiar. Termina se faltar alguma."""
     em_falta = []
-    for p in (pq_dir / 'ratings.parquet', fase1_part, csv_file):
+    for p in [pq_dir / f'{t}.parquet' for t in TABELAS_CLOUD] + [fase1_part, csv_file]:
         if not p.exists():
             em_falta.append(str(p))
     if em_falta:
         sys.exit('Erro: faltam ficheiros da fase 1: ' + ', '.join(em_falta) +
                  f'\nCorre primeiro: python run_pipeline.py --dataset {ds} --steps ingest parquet')
-    return tables
+    return TABELAS_CLOUD
 
 
 def verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part, csv_file, csv_dst):
@@ -404,7 +403,7 @@ def verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part, csv_file, csv
     # Juntam-se todos os problemas numa lista, para os mostrar de uma vez
     problemas = check_structure(cloud_dir, tables)
     info_tabelas, info_comp = verificar_tabelas(con, tables, ds, pq_dir, cloud_dir, problemas)
-    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira tabela do SCHEMAS
+    n_ratings = info_tabelas[0]['linhas']        # ratings é sempre a primeira de TABELAS_CLOUD
     schema_ratings = info_tabelas[0]['schema']
     particoes, info_part, comp_part = verificar_particoes(con, ds, cloud_dir / 'ratings_part', fase1_part,
                                                           n_ratings, schema_ratings, problemas)

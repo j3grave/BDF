@@ -130,18 +130,6 @@ def check_ddl(con, cloud_dir, instrucoes):
     return problemas
 
 
-def escolher_instrucoes(params, cloud_dir):
-    """Instruções do DDL só para as tabelas que existem neste dataset (o 1M não tem tags nem links)."""
-    instrucoes = []
-    tabelas = []
-    for ficheiro, tabela, sql in ddl_statements(params):
-        if tabela is None or (cloud_dir / tabela).exists():
-            instrucoes.append((ficheiro, tabela, sql))
-            if tabela:
-                tabelas.append(tabela)
-    return instrucoes, tabelas
-
-
 def criar_tabelas(athena, aws, instrucoes, recriar):
     """Corre o DDL no Athena: primeiro a base de dados, depois as tabelas dentro dela."""
     for ficheiro, table, sql in instrucoes:
@@ -209,7 +197,11 @@ def main():
     # sabemos o bucket, por isso fica um texto de exemplo.
     params = {'database': aws['database'], 'pasta': aws['pasta'],
               'bucket': aws.get('bucket_dados') or '<bucket-dados>'}
-    instrucoes, tabelas = escolher_instrucoes(params, cloud_dir)
+    instrucoes = ddl_statements(params)
+    tabelas = []
+    for _, tabela, _ in instrucoes:
+        if tabela:
+            tabelas.append(tabela)
 
     # 1. Sem AWS: o DDL tem de coincidir com os ficheiros que foram (ou vão) para o S3
     con = duckdb.connect()

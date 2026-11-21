@@ -221,7 +221,7 @@ O passo `cloud` não corre por omissão. O `scripts/cloud_pipeline.py` faz, por 
    usar outros nomes, passa `--bucket-dados` e `--bucket-resultados` ou escreve-os no `config.yaml`.
 4. Envia `data/cloud/<pasta>/` para o S3 com o `boto3`. Só envia ficheiros novos ou com outro
    tamanho e não apaga nada no S3.
-5. Corre o `athena_setup.py --recriar`: base de dados `movielens_<dataset>`, seis tabelas,
+5. Corre o `athena_setup.py --recriar`: base de dados `movielens_<dataset>`, quatro tabelas,
    partições (`MSCK REPAIR TABLE`, depois do upload) e comparação das contagens com os ficheiros locais.
 6. Corre o `athena_benchmark.py`, se a validação passar. Uma query só é gravada em
    `results/cloud_benchmarks.csv` se devolver o mesmo n.º de linhas nos dois motores.
@@ -263,12 +263,11 @@ data/cloud/ml-32m/                    # ml-latest-small no small, ml-1m no 1M
 ├── ratings/ratings.parquet           # sem partição
 ├── ratings_part/year=AAAA/*.parquet  # particionado por ano
 ├── ratings_csv/ratings.csv           # CSV, para comparar os bytes lidos no Athena
-├── movies/movies.parquet
-├── tags/tags.parquet
-└── links/links.parquet
+└── movies/movies.parquet
 ```
 
-- Uma pasta por tabela, porque o Glue e o Athena tratam cada pasta como uma tabela.
+- Uma pasta por tabela, porque o Glue e o Athena tratam cada pasta como uma tabela. Só vão o
+  `ratings` (em três versões) e o `movies`: o `tags` e o `links` não são usados por nenhuma query do Athena.
 - Parquet com compressão zstd e os mesmos tipos da fase 1.
 - Apaga e recria a pasta em cada execução.
 - No fim, compara as contagens com a origem, a soma das partições com o `ratings` e as contagens
