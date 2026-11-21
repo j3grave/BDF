@@ -1,6 +1,6 @@
 # Análises · MovieLens 1m
 
-Gerado por `scripts/04_analise.py` em 0.7 s (sessão DuckDB em UTC).
+Gerado por `scripts/04_analise.py` em 0.3 s (sessão DuckDB em UTC).
 
 ## Fontes
 
@@ -27,21 +27,21 @@ Gerado por `scripts/04_analise.py` em 0.7 s (sessão DuckDB em UTC).
 
 | Query | Linhas | Segundos | CSV |
 |---|---:|---:|---|
-| 10_flag_bots | 6040 | 0.053 | `10_flag_bots.csv` |
+| 10_flag_bots | 6040 | 0.048 | `10_flag_bots.csv` |
 | 10_flag_bots_calibracao | 1 | 0.002 | `10_flag_bots_calibracao.csv` |
-| anual | 4 | 0.008 | `anual.csv` |
-| distribuicao | 5 | 0.006 | `distribuicao.csv` |
-| eventos | 100 | 0.082 | `eventos.csv` |
-| evolucao_filmes | 0 | 0.013 | `evolucao_filmes.csv` |
-| filmes_ano | 0 | 0.015 | `filmes_ano.csv` |
-| filtros_eventos | 1 | 0.085 | `filtros_eventos.csv` |
-| grupos_atividade | 20 | 0.009 | `grupos_atividade.csv` |
-| integridade | 1 | 0.004 | `integridade.csv` |
-| mensal | 35 | 0.013 | `mensal.csv` |
+| anual | 4 | 0.006 | `anual.csv` |
+| distribuicao | 5 | 0.005 | `distribuicao.csv` |
+| eventos | 100 | 0.086 | `eventos.csv` |
+| evolucao_filmes | 0 | 0.011 | `evolucao_filmes.csv` |
+| filmes_ano | 0 | 0.012 | `filmes_ano.csv` |
+| filtros_eventos | 1 | 0.070 | `filtros_eventos.csv` |
+| grupos_atividade | 20 | 0.007 | `grupos_atividade.csv` |
+| integridade | 1 | 0.003 | `integridade.csv` |
+| mensal | 35 | 0.012 | `mensal.csv` |
 | perfis_ativos | 4 | 0.009 | `perfis_ativos.csv` |
-| perfis_cumulativos | 4 | 0.014 | `perfis_cumulativos.csv` |
-| ponderado | 10 | 0.004 | `ponderado.csv` |
-| qualidade | 1 | 0.017 | `qualidade.csv` |
+| perfis_cumulativos | 4 | 0.011 | `perfis_cumulativos.csv` |
+| ponderado | 10 | 0.003 | `ponderado.csv` |
+| qualidade | 1 | 0.015 | `qualidade.csv` |
 | valores_ano | 20 | 0.005 | `valores_ano.csv` |
 
 ## Deteção de bots (10_flag_bots)
@@ -61,26 +61,3 @@ Submissão em lote por década do primeiro rating: 2000s: 339.
 | 2880 | suspeito (regra A) | regra A: 45 eventos em 10 min depois do registo (limiar p99,9 = 40.0), mediana de 16 s entre eventos; sinais complementares: 0/3 |
 | 5522 | suspeito (regra A) | regra A: 40 eventos em 10 min depois do registo (limiar p99,9 = 40.0), mediana de 18 s entre eventos; sinais complementares: 0/3 |
 | 5536 | suspeito (regra A) | regra A: 40 eventos em 10 min depois do registo (limiar p99,9 = 40.0), mediana de 19 s entre eventos; sinais complementares: 0/3 |
-
-## Versões Athena emuladas no DuckDB
-
-Emulação: divisão inteira entre inteiros e macros para `from_unixtime`, `date_format`, `sequence` e `approx_percentile`. Valida a lógica, não a sintaxe do Trino.
-
-| Query | Linhas DuckDB | Linhas Athena (emul.) | Iguais | Nota |
-|---|---:|---:|---|---|
-| 10_flag_bots | 6040 | 6040 | sim |  |
-| 10_flag_bots_calibracao | 1 | 1 | sim |  |
-| anual | 4 | 4 | sim |  |
-| distribuicao | 5 | 5 | sim |  |
-| eventos | 100 | 100 | sim |  |
-| evolucao_filmes | 0 | 0 | sim |  |
-| filmes_ano | 0 | 0 | sim |  |
-| filtros_eventos | 1 | 1 | sim |  |
-| grupos_atividade | 20 | 20 | sim |  |
-| integridade | 1 | 1 | sim |  |
-| mensal | 35 | 35 | sim |  |
-| perfis_ativos | 4 | 4 | sim |  |
-| perfis_cumulativos | 4 | 4 | sim |  |
-| ponderado | 10 | 10 | sim |  |
-| qualidade | 1 | 1 | sim |  |
-| valores_ano | 20 | 20 | sim |  |
