@@ -96,15 +96,18 @@ Com conda: `conda create -n bdf python=3.13`, `conda activate bdf` e
 ## Como correr
 
 ```bash
-python run_pipeline.py                                 # pergunta o dataset e se corre a cloud
+python run_pipeline.py                                 # pergunta o dataset, a cloud e onde gravar
+python run_pipeline.py --dataset small --resultados-locais   # blocos 1 a 3, sem mexer em results/
 python run_pipeline.py --dataset small                 # blocos 1 a 3
 python run_pipeline.py --dataset 1m --coordenacao      # o mesmo, com o teste de coordenação
 python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
 python run_pipeline.py --dataset small --steps cloud   # bloco 4 (usa a AWS)
 ```
 
-Sem opções, o `run_pipeline.py` pergunta o dataset e se corre só o pipeline local, o local e a
-cloud, ou só a cloud. Se escolheres a cloud, confirma logo as credenciais em `~/.aws/credentials`:
+Sem opções, o `run_pipeline.py` pergunta o dataset, se corre só o pipeline local, o local e a
+cloud, ou só a cloud, e se atualiza os resultados do repositório. Por omissão não atualiza: grava
+em `results_local/`, que não está no git, e uma corrida de teste não deixa alterações para commit.
+Para atualizar `results/` (por exemplo, antes de uma entrega), responde "sim". Se escolheres a cloud, confirma logo as credenciais em `~/.aws/credentials`:
 se não forem válidas, mostra as instruções do Learner Lab e espera que as atualizes. As chaves
 nunca são escritas no terminal. No fim das perguntas mostra o comando equivalente, para a próxima
 vez. Com opções, não pergunta nada; sem `--dataset`, usa o valor do `config.yaml`. Cada script também corre sozinho, por exemplo

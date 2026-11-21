@@ -17,6 +17,7 @@ Como correr:
 """
 import argparse
 import csv
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -67,7 +68,9 @@ def load_config(dataset=None):
         'raw': base / 'raw',            # zip e ficheiros originais
         'csv': base / 'csv',            # CSV normalizados (esquema comum)
         'parquet': base / 'parquet',
-        'results': ROOT / cfg['results_dir'],
+        # O run_pipeline.py muda a pasta dos resultados com a variável BDF_RESULTS_DIR
+        # (results_local/, fora do git), para correr sem deixar alterações para commit
+        'results': ROOT / os.environ.get('BDF_RESULTS_DIR', cfg['results_dir']),
     }
     cfg['source'] = DATASETS[ds]
     return cfg

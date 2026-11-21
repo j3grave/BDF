@@ -643,10 +643,10 @@ def relatorio_eda(pasta, ds, origem, resumo, ind, figuras, segundos):
     (pasta / "eda_relatorio.md").write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
-def correr_eda(ds, fonte):
+def correr_eda(ds, fonte, resultados):
     """Liga aos dados, calcula os indicadores, gera as figuras e o relatório da EDA."""
     t0 = time.perf_counter()
-    pasta = ROOT / "results" / ds / "eda"
+    pasta = resultados / ds / "eda"
     pasta.mkdir(parents=True, exist_ok=True)
     aplicar_estilo_nova()
 
@@ -864,7 +864,7 @@ def verificar(pasta, ds):
         res.append(('integridade: avaliações sem filme = 0', int(i.ratings_sem_filme), i.ratings_sem_filme == 0))
 
     # Comparação com a parte 1 (EDA)
-    f_ind = ROOT / 'results' / ds / 'eda' / 'eda_indicadores.csv'
+    f_ind = pasta.parent / 'eda' / 'eda_indicadores.csv'
     if f_ind.exists() and qual is not None:
         ind = pd.read_csv(f_ind).set_index('indicador')['valor']
         q = qual.iloc[0]
@@ -1017,7 +1017,7 @@ def relatorio_analises(pasta, ds, origem, resumo, verif, comparacao, segundos):
 def correr_analises(cfg, args):
     """Corre as queries de sql/analise/, verifica os resultados e escreve o relatório."""
     ds = cfg['dataset']
-    pasta = ROOT / 'results' / ds / 'analises'
+    pasta = cfg['paths']['results'] / ds / 'analises'
     pasta.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
 
@@ -1656,7 +1656,7 @@ def main():
     """Corre a EDA, as análises e, com --coordenacao, o teste de coordenação."""
     args = parse_args()
     cfg = load_config(args.dataset)
-    correr_eda(cfg['dataset'], args.fonte)
+    correr_eda(cfg['dataset'], args.fonte, cfg['paths']['results'])
     correr_analises(cfg, args)
     if args.coordenacao:
         correr_coordenacao(cfg, args)
