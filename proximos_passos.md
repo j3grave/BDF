@@ -49,7 +49,7 @@ O `main` só tem o notebook inicial. O branch `fase2-cloud-pipeline` contém tod
 
 ## 2. Validação pelo Luís
 
-Sem esta validação, a deteção de bots não pode entrar no relatório como resultado final. Os detalhes estão em `docs/validacao_queries_colega.md`, secção 13.
+Sem esta validação, a deteção de bots não pode entrar no relatório como resultado final. Os detalhes estão em `docs/validacao_queries_colega.md`, secção 13, no branch `arquivo/main-com-imdb` (`git show arquivo/main-com-imdb:docs/validacao_queries_colega.md`).
 
 - [ ] **Regras de bots** (`sql/analise/10_flag_bots.sql`):
   - regra A: ritmo sustentado fora do registo, com limiar no quantil p99,9;
