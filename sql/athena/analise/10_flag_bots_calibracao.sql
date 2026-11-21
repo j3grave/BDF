@@ -1,6 +1,5 @@
 -- 10_flag_bots_calibracao.sql (Athena) - equivalente a sql/analise/10_flag_bots_calibracao.sql
 --
--- *** A VALIDAR COM O LUÍS ***
 -- Lê a tabela flag_bots criada por CTAS a partir de sql/athena/analise/10_flag_bots.sql
 -- (${flag_bots} = flag_bots). Resultado agregado: uma linha.
 -- Quantis com approx_percentile (aproximados; no DuckDB são exatos, quantile_cont).

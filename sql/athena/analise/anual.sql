@@ -1,5 +1,4 @@
 -- anual.sql (Athena) - equivalente a sql/analise/anual.sql
--- Origem: notebook do Luís, célula 108 ("novo-queries"), consultas_sql()["anual"].
 --
 -- Fuso horário: em ratings_part, year vem do nome das pastas (calculado em UTC no
 -- prepare_cloud.py); nas tabelas sem partição, year = year(from_unixtime("timestamp")) e

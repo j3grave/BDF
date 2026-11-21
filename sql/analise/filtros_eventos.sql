@@ -1,19 +1,14 @@
 -- filtros_eventos.sql (DuckDB) - funil dos filtros dos "eventos" (concentrações de notas
 -- extremas num filme, num dia)
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 112 (id "novo-advanced"): SQL_AVANCADO["dias_filme"] (tabela filme x dia),
---         a view "eventos" e a consulta "filtros". Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: quantos pares (filme, dia) passam cada filtro, por ordem: histórico anterior ->
 -- n.º de utilizadores no dia -> proporção de notas extremas -> variação da média face ao
 -- histórico no mesmo sentido?
 --
--- Alterações face ao original:
--- - dias_filme (uma linha por filme x dia: 99 538 no small, 14,7 M no 32M) deixa de ser um
---   resultado: só existe como CTE (d, h, v) e a query devolve uma linha (relatório, P6);
--- - os limites estão numa CTE (lim) e são devolvidos com o resultado. São os do capítulo 9
---   do notebook (os das queries SQL), não os do capítulo 8 (P7): escolher um só conjunto é
---   uma decisão a tomar com o Luís;
+-- Notas:
+-- - a tabela filme x dia (99 538 linhas no small, 14,7 M no 32M) só existe como CTE (d, h, v)
+--   e a query devolve uma linha;
+-- - os limites estão numa CTE (lim), são os mesmos de eventos.sql e são devolvidos com o resultado;
 -- - count_if em vez de COUNT(*) FILTER e AVG((cond)::INTEGER); janela por extenso.
 -- O dia é timestamp // 86400 (dia UTC, sem conversão de fuso).
 --

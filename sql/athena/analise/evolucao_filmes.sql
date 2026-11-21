@@ -1,5 +1,4 @@
 -- evolucao_filmes.sql (Athena) - equivalente a sql/analise/evolucao_filmes.sql
--- Origem: notebook do Luís, célula 112 ("novo-advanced"), SQL_AVANCADO["evolucao_filmes"].
 --
 -- Opção usada: só anos completos (o último ano só conta se o último rating for de 31/12;
 -- senão o fim passa para o ano anterior). As colunas periodo_anterior, periodo_recente e

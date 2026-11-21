@@ -5,6 +5,8 @@ Science & Analytics da NOVA IMS (2026).
 
 O projeto é um pipeline em scripts que leva o MovieLens do download até ao Amazon Athena e mede,
 em cada etapa, o efeito do formato e da escala (100 mil, 1 milhão e 32 milhões de avaliações).
+Está organizado em quatro blocos: preparação dos dados, desempenho local, análise dos dados e
+cloud.
 
 Os notebooks do lab (Parquet, DuckDB, Polars e Arrow) e os documentos de trabalho do grupo
 (resumo do projeto, próximos passos e revisão da fase 2) estão arquivados no branch
@@ -32,35 +34,35 @@ Depois de descarregado e normalizado, o 32M ocupa cerca de 1,2 GB, mais o Parque
 
 ## Estrutura do repositório
 
+Os scripts estão numerados pela ordem em que correm e organizados em quatro blocos.
+
 ```
 BDF/
-├── run_pipeline.py              # ponto de entrada do pipeline
-├── config.yaml                  # dataset por omissão e secção aws
+├── run_pipeline.py                # ponto de entrada do pipeline
+├── config.yaml                    # dataset por omissão e secção aws
 ├── requirements.txt
 ├── scripts/
-│   ├── common.py                # configuração, caminhos e escrita dos CSV de resultados
-│   ├── 01_ingest.py             # passo ingest
-│   ├── 02_to_parquet.py         # passo parquet
-│   ├── 03_benchmark.py          # passo benchmark
-│   ├── 04_eda.py                # passo eda
-│   ├── 05_analises.py           # passo analises (queries do Luís e deteção de bots)
-│   ├── 06_coordenacao.py        # coordenação entre contas (corre à mão)
-│   ├── cloud_pipeline.py        # passo cloud: upload, catálogo e benchmark
-│   ├── prepare_cloud.py         # ficheiros para o S3, em data/cloud/
-│   ├── athena_common.py         # opções AWS e cliente do Athena
-│   ├── athena_setup.py          # DDL no Glue Data Catalog e validação
-│   └── athena_benchmark.py      # benchmark DuckDB vs Athena
+│   ├── common.py                  # partilhado: configuração, caminhos e CSV de resultados
+│   ├── 01_ingest.py               # bloco 1, preparação dos dados: download e CSV
+│   ├── 02_to_parquet.py           # bloco 1: Parquet e Parquet por ano
+│   ├── 03_benchmark.py            # bloco 2, desempenho local: tempos das queries
+│   ├── 04_analise.py              # bloco 3, análise dos dados: EDA, análises e coordenação
+│   ├── 05_prepare_cloud.py        # bloco 4, cloud: ficheiros para o S3, em data/cloud/
+│   ├── 06_upload_s3.py            # bloco 4: credenciais, buckets e upload
+│   ├── 07_athena_setup.py         # bloco 4: catálogo no Glue e validação das contagens
+│   ├── 08_athena_benchmark.py     # bloco 4: benchmark DuckDB vs Athena
+│   └── athena_common.py           # partilhado pelo bloco 4: opções AWS e cliente do Athena
 ├── sql/
-│   ├── 01_...sql a 05_...sql    # perguntas do benchmark (DuckDB); 10_flag_bots.sql é só um esqueleto
-│   ├── analise/                 # as 16 queries do passo analises (DuckDB)
-│   ├── cloud/                   # query 06 do benchmark cloud, versão DuckDB
+│   ├── 01_...sql a 05_...sql      # perguntas do benchmark (DuckDB)
+│   ├── analise/                   # as 16 queries da análise (DuckDB)
+│   ├── cloud/                     # query 06 do benchmark cloud, versão DuckDB
 │   └── athena/
-│       ├── ddl/                 # CREATE TABLE do Athena
-│       ├── queries/             # queries 01 a 06 em Trino
-│       └── analise/             # as 16 queries de sql/analise/ em Trino
-├── reports/                     # manifestos da preparação para a cloud
-├── results/                     # resultados leves (CSV, PNG e relatórios .md)
-└── data/                        # não versionado: downloads, CSV, Parquet e data/cloud/
+│       ├── ddl/                   # CREATE TABLE do Athena
+│       ├── queries/               # queries 01 a 06 em Trino
+│       └── analise/               # as 16 queries de sql/analise/ em Trino
+├── reports/                       # manifestos da preparação para a cloud
+├── results/                       # resultados leves (CSV, PNG e relatórios .md)
+└── data/                          # não versionado: downloads, CSV, Parquet e data/cloud/
 ```
 
 Dentro de `results/`:
@@ -73,7 +75,7 @@ Dentro de `results/`:
 | `cloud_benchmarks.csv` | DuckDB vs Athena: tempo, MB lidos e n.º de linhas |
 | `<dataset>/eda/` | Figuras, indicadores e `eda_relatorio.md` |
 | `<dataset>/analises/` | Um CSV por query, `analises_relatorio.md` e `athena_emulado/` |
-| `<dataset>/bots_coordenacao/` | Resultados do `06_coordenacao.py` |
+| `<dataset>/bots_coordenacao/` | Resultados do teste de coordenação |
 
 ## Ambiente
 
@@ -91,25 +93,24 @@ pip install -r requirements.txt
 Com conda: `conda create -n bdf python=3.13`, `conda activate bdf` e
 `pip install -r requirements.txt`.
 
-## Pipeline local
+## Como correr
 
 ```bash
-python run_pipeline.py --dataset small                 # os cinco passos
+python run_pipeline.py --dataset small                 # blocos 1 a 3
+python run_pipeline.py --dataset 1m --coordenacao      # o mesmo, com o teste de coordenação
 python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
+python run_pipeline.py --dataset small --steps cloud   # bloco 4 (usa a AWS)
 ```
 
 Sem `--dataset`, usa o valor do `config.yaml`. Cada script também corre sozinho, por exemplo
-`python scripts/02_to_parquet.py --dataset 1m`. Se um passo falhar, o pipeline pára.
+`python scripts/02_to_parquet.py --dataset 1m`. Se um script falhar, o pipeline pára.
 
-| Passo | Script | O que faz |
+| Bloco | Passo | Scripts |
 |---|---|---|
-| `ingest` | `01_ingest.py` | Descarrega o zip (só se ainda não existir) e grava CSV com o mesmo esquema nos três datasets. Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
-| `parquet` | `02_to_parquet.py` | Converte para Parquet com o `COPY` do DuckDB: uma versão sem partição e o `ratings` particionado por ano (em UTC). Regista os tamanhos. |
-| `benchmark` | `03_benchmark.py` | Corre 3 vezes cada query de `sql/` nos dois Parquet e regista a mediana e o n.º de linhas. |
-| `eda` | `04_eda.py` | Análise exploratória com as agregações no DuckDB: indicadores, qualidade das tabelas, 10 figuras e relatório. |
-| `analises` | `05_analises.py` | Corre as 16 queries de `sql/analise/` e grava um CSV por query. Verifica a qualidade e a integridade dos dados e compara os totais com o `04_eda.py`. Se uma verificação falhar, o pipeline pára. |
-
-Nas queries de `sql/`, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet.
+| 1. Preparação dos dados | `ingest`, `parquet` | `01_ingest.py`, `02_to_parquet.py` |
+| 2. Desempenho local | `benchmark` | `03_benchmark.py` |
+| 3. Análise dos dados | `analise` | `04_analise.py` |
+| 4. Cloud | `cloud` (só a pedido) | `05_prepare_cloud.py` a `08_athena_benchmark.py` |
 
 A pasta `data/<dataset>` pode ser um symlink para outra cópia onde os dados já existem, para não
 repetir o `ingest` e o `parquet`:
@@ -119,62 +120,65 @@ mkdir -p data
 ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
 ```
 
-## Análises e deteção de bots
+## Bloco 1: preparação dos dados
 
-> Provisório: as regras de deteção de bots e o teste de coordenação ainda estão a ser validados
-> pelo Luís. Os números abaixo não são resultados finais.
+| Script | O que faz |
+|---|---|
+| `01_ingest.py` | Descarrega o zip (só se ainda não existir) e grava CSV com o mesmo esquema nos três datasets. Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
+| `02_to_parquet.py` | Converte para Parquet com o `COPY` do DuckDB: uma versão sem partição e o `ratings` particionado por ano (em UTC). Regista os tamanhos. |
 
-### Passo `analises`
+## Bloco 2: desempenho local
 
-As queries vêm do notebook do Luís (células 108, 109 e 112), arquivado no branch
-`arquivo/docs-projeto`. Foram passadas para `sql/analise/` e
-corrigidas onde foi preciso: fuso horário, faixas de atividade e último ano incompleto. O relatório
-dessa validação está arquivado no branch `arquivo/main-com-imdb`
-(`git show arquivo/main-com-imdb:docs/validacao_queries_colega.md`). Cada query tem uma versão
-Athena com o mesmo nome em `sql/athena/analise/`.
+O `03_benchmark.py` corre 3 vezes cada query de `sql/` nos dois Parquet e regista a mediana e o
+n.º de linhas. Nas queries, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet.
+
+## Bloco 3: análise dos dados
+
+O `04_analise.py` tem três partes:
+
+1. **Análise exploratória (EDA):** indicadores, qualidade das tabelas, 10 figuras e relatório.
+2. **Análises:** as 16 queries de `sql/analise/` (qualidade, integridade, evolução no tempo,
+   filmes, uso da escala e utilizadores suspeitos), um CSV por query. Verifica a qualidade e a
+   integridade dos dados e compara os totais com a EDA. Se uma verificação falhar, o pipeline pára.
+3. **Coordenação entre contas** (só com `--coordenacao`, porque demora cerca de 10 minutos no
+   32M): procura rajadas, em que várias contas dão a mesma nota extrema ao mesmo filme na mesma
+   hora, longe da média do filme, e compara-as com uma linha de base em que os timestamps são
+   baralhados dentro de cada filme.
 
 ```bash
-python scripts/05_analises.py --dataset small                  # o mesmo que o passo analises
-python scripts/05_analises.py --dataset 1m --fonte csv         # lê os CSV em vez do Parquet
-python scripts/05_analises.py --dataset small --emular-athena  # testa também as versões Athena
+python scripts/04_analise.py --dataset small                  # o mesmo que o passo analise
+python scripts/04_analise.py --dataset 1m --fonte csv         # lê os CSV em vez do Parquet
+python scripts/04_analise.py --dataset small --emular-athena  # testa também as versões Athena
+python scripts/04_analise.py --dataset 32m --coordenacao --repeticoes 200 --memoria 12GB
 ```
 
-Com `--emular-athena`, as versões Athena correm no DuckDB, com macros que imitam as funções do
-Trino, e cada resultado é comparado com o da versão DuckDB. Isto confirma a lógica, mas não a
-sintaxe do Trino, que só se confirma no Athena.
+Cada query de `sql/analise/` tem uma versão Athena com o mesmo nome em `sql/athena/analise/`. Com
+`--emular-athena`, essas versões correm no DuckDB, com macros que imitam as funções do Trino, e
+cada resultado é comparado com o da versão DuckDB. Isto confirma a lógica, mas não a sintaxe do
+Trino, que só se confirma no Athena.
 
-A regra original de bots sinalizava sobretudo utilizadores acabados de registar: 34% de suspeitos
-no small e 47% no 1M. O `sql/analise/10_flag_bots.sql` usa duas regras novas:
+**Utilizadores suspeitos** (`sql/analise/10_flag_bots.sql`). Uma regra simples, baseada em muita
+atividade, sinalizava 34% dos utilizadores do small e 47% do 1M, quase todos por causa do registo
+inicial. A query usa duas regras:
 
 - regra A: ritmo sustentado depois das primeiras 24 horas, acima do quantil p99,9;
 - regra B: registo extremo, com pelo menos 100 eventos e um intervalo mediano de 2 segundos ou menos.
 
-Com elas, os suspeitos descem para 0,33% no small e 0,10% no 1M. As submissões em lote (10 ou mais
+Com elas, os suspeitos são 0,33% no small e 0,10% no 1M. As submissões em lote (10 ou mais
 avaliações no mesmo segundo) são contadas à parte e não entram como bots.
 
-### Coordenação entre contas (`06_coordenacao.py`)
-
-Corre à mão, fora do `run_pipeline.py`, porque demora no 32M. Procura rajadas: várias contas a dar
-a mesma nota extrema ao mesmo filme na mesma hora, longe da média do filme. Compara o número de
-rajadas com uma linha de base em que os timestamps são baralhados dentro de cada filme.
-
-```bash
-python scripts/06_coordenacao.py --dataset 1m
-python scripts/06_coordenacao.py --dataset 32m --repeticoes 200 --memoria 12GB
-```
-
-Os resultados ficam em `results/<dataset>/bots_coordenacao/`. Conclusão atual, ainda por validar:
+**Coordenação entre contas.** Os resultados ficam em `results/<dataset>/bots_coordenacao/`:
 
 - 1M: não há mais rajadas do que na linha de base. As mais fortes são de contas novas, no pico de
   registos de 20 e 21/11/2000.
 - 32M: há mais rajadas do que na linha de base, mas o excesso fica todo antes da escala de meias
-  estrelas (fevereiro de 2003) e explica-se pela mudança de escala. Com 200 permutações, nenhuma
-  comparação passa a correção de Bonferroni.
+  estrelas (fevereiro de 2003) e explica-se pela mudança de escala, não por coordenação. Com 200
+  permutações, nenhuma comparação passa a correção de Bonferroni.
 
-## Fase cloud (AWS Academy Learner Lab)
+## Bloco 4: cloud (AWS Academy Learner Lab)
 
 Leva o dataset para o S3, regista as tabelas no Glue Data Catalog e compara o Athena com o DuckDB.
-Cada colega corre-a na sua conta, com um só comando. Não é preciso configurar buckets nem
+Cada colega corre-o na sua conta, com um só comando. Não é preciso configurar buckets nem
 instalar a AWS CLI.
 
 ### Antes de começar
@@ -206,21 +210,55 @@ As credenciais ficam fora do repositório. Nunca vão para o `config.yaml` nem p
 python run_pipeline.py --dataset small --steps cloud
 ```
 
-O passo `cloud` não corre por omissão. O `scripts/cloud_pipeline.py` faz, por ordem:
+O passo `cloud` não corre por omissão. Corre quatro scripts, por ordem, e pára se algum falhar:
 
-1. Confirma as credenciais. Se faltarem ou tiverem expirado, explica como as renovar.
-2. Corre o `prepare_cloud.py` se `data/cloud/<pasta>/` não existir ou for mais antiga do que o Parquet.
-3. Cria os buckets em `us-east-1`, se não existirem: `bdf26-g1-dados-<ID da conta>` e
-   `bdf26-g1-resultados-<ID da conta>`. O ID da conta só aparece no ecrã e nunca é gravado. Para
-   usar outros nomes, passa `--bucket-dados` e `--bucket-resultados` ou escreve-os no `config.yaml`.
-4. Envia `data/cloud/<pasta>/` para o S3 com o `boto3`. Só envia ficheiros novos ou com outro
-   tamanho e não apaga nada no S3.
-5. Corre o `athena_setup.py --recriar`: base de dados `movielens_<dataset>`, quatro tabelas,
-   partições (`MSCK REPAIR TABLE`, depois do upload) e comparação das contagens com os ficheiros locais.
-6. Corre o `athena_benchmark.py`, se a validação passar. Uma query só é gravada em
-   `results/cloud_benchmarks.csv` se devolver o mesmo n.º de linhas nos dois motores.
+1. **`05_prepare_cloud.py`** grava em `data/cloud/<pasta>/` uma cópia exata do que vai para o S3.
+   Se a pasta já estiver atualizada (manifesto mais recente do que o Parquet), não faz nada;
+   `--forcar` prepara de novo. Não contacta a AWS.
+2. **`06_upload_s3.py`** confirma as credenciais (se faltarem ou tiverem expirado, explica como as
+   renovar), cria os buckets em `us-east-1` se não existirem (`bdf26-g1-dados-<ID da conta>` e
+   `bdf26-g1-resultados-<ID da conta>`) e envia os ficheiros novos ou com outro tamanho. Não apaga
+   nada no S3. O ID da conta só aparece no ecrã e nunca é gravado. Para usar outros nomes, passa
+   `--bucket-dados` e `--bucket-resultados` ou escreve-os no `config.yaml`.
+3. **`07_athena_setup.py --recriar`** cria a base de dados `movielens_<dataset>` e as quatro
+   tabelas, carrega as partições (`MSCK REPAIR TABLE`, depois do upload) e compara as contagens
+   (total e por ano) com os ficheiros locais. Antes de enviar o DDL, confirma, sem AWS, que as
+   colunas e os tipos coincidem com `data/cloud/`.
+4. **`08_athena_benchmark.py`** corre as queries de `sql/athena/queries/` no Athena e as mesmas
+   perguntas no DuckDB sobre `data/cloud/`, em CSV, Parquet e Parquet particionado. Uma query só é
+   gravada em `results/cloud_benchmarks.csv` se devolver o mesmo n.º de linhas nos dois motores.
 
 Pode voltar a correr-se: os buckets e os ficheiros que já existem são reaproveitados.
+
+```
+data/cloud/ml-32m/                    # ml-latest-small no small, ml-1m no 1M
+├── ratings/ratings.parquet           # sem partição
+├── ratings_part/year=AAAA/*.parquet  # particionado por ano
+├── ratings_csv/ratings.csv           # CSV, para comparar os bytes lidos no Athena
+└── movies/movies.parquet
+```
+
+- Uma pasta por tabela, porque o Glue e o Athena tratam cada pasta como uma tabela. Só vão o
+  `ratings` (em três versões) e o `movies`: o `tags` e o `links` não são usados por nenhuma query
+  do Athena.
+- Parquet com compressão zstd e os mesmos tipos do bloco 1.
+- O `05_prepare_cloud.py` compara as contagens com a origem, a soma das partições com o `ratings`
+  e as contagens por ano com o bloco 1, e confirma os tipos e a compressão. Se tudo passar, grava
+  `reports/cloud_manifest_<dataset>.md`.
+
+O DDL é escrito à mão, em vez de usar um crawler do Glue, para os tipos ficarem iguais aos do
+manifesto. As diferenças entre o Trino e o DuckDB (`CROSS JOIN UNNEST` nos géneros,
+`approx_percentile` em vez de `MEDIAN`, `"timestamp"` entre aspas) estão no cabeçalho de cada
+query. A query `06_ratings_desde_2015` mostra o partition pruning. A versão DuckDB está em
+`sql/cloud/`, para não alterar o benchmark do bloco 2.
+
+```bash
+# Sem AWS: preparar os ficheiros, verificar o DDL, ver o SQL e correr só a parte DuckDB
+python scripts/05_prepare_cloud.py --dataset small
+python scripts/07_athena_setup.py --dry-run
+python scripts/08_athena_benchmark.py --dry-run
+python scripts/08_athena_benchmark.py --engines duckdb
+```
 
 ### Custos
 
@@ -242,55 +280,6 @@ O orçamento do Learner Lab é limitado: testa sempre primeiro com o `small`.
 | 0 linhas no `ratings_part` ou "contagens por ano diferentes" | As partições não foram registadas no catálogo. | Voltar a correr o passo `cloud`, que recria as tabelas e corre o `MSCK REPAIR TABLE` depois do upload. |
 | Os buckets ou as tabelas desapareceram | O "Reset" do Learner Lab apaga buckets, objetos e catálogo. O "End Lab" não apaga. | Voltar a correr o passo `cloud`. |
 | "o bucket ... existe mas pertence a outra conta" | Alguém já usa esse nome de bucket (os nomes são únicos em toda a AWS). | Repor `null` no `config.yaml` ou escolher outro nome. |
-
-### Preparação dos ficheiros (`prepare_cloud.py`)
-
-O passo `cloud` corre-o quando é preciso, mas também pode correr sozinho. Não contacta a AWS: só
-grava em `data/cloud/<pasta>/` uma cópia exata do que vai para o S3.
-
-```bash
-python scripts/prepare_cloud.py --dataset small
-```
-
-```
-data/cloud/ml-32m/                    # ml-latest-small no small, ml-1m no 1M
-├── ratings/ratings.parquet           # sem partição
-├── ratings_part/year=AAAA/*.parquet  # particionado por ano
-├── ratings_csv/ratings.csv           # CSV, para comparar os bytes lidos no Athena
-└── movies/movies.parquet
-```
-
-- Uma pasta por tabela, porque o Glue e o Athena tratam cada pasta como uma tabela. Só vão o
-  `ratings` (em três versões) e o `movies`: o `tags` e o `links` não são usados por nenhuma query do Athena.
-- Parquet com compressão zstd e os mesmos tipos da fase 1.
-- Apaga e recria a pasta em cada execução.
-- No fim, compara as contagens com a origem, a soma das partições com o `ratings` e as contagens
-  por ano com a fase 1, e confirma os tipos e a compressão. Se alguma verificação falhar, termina
-  com erro. Se passarem todas, grava `reports/cloud_manifest_<dataset>.md`.
-
-### Catálogo e benchmark do Athena
-
-| Script | O que faz |
-|---|---|
-| `athena_setup.py` | Corre o DDL de `sql/athena/ddl/`, carrega as partições e confirma que o n.º de linhas (total e por ano) é igual ao dos ficheiros locais. Antes de enviar o DDL, confirma, sem AWS, que as colunas e os tipos coincidem com `data/cloud/`. |
-| `athena_benchmark.py` | Corre as queries de `sql/athena/queries/` no Athena e as mesmas perguntas no DuckDB sobre `data/cloud/`, em CSV, Parquet e Parquet particionado. Grava a mediana do tempo, o tempo no motor, os MB lidos e o n.º de linhas. |
-
-O DDL é escrito à mão, em vez de usar um crawler do Glue, para os tipos ficarem iguais aos do
-manifesto. As diferenças entre o Trino e o DuckDB (`CROSS JOIN UNNEST` nos géneros,
-`approx_percentile` em vez de `MEDIAN`, `"timestamp"` entre aspas) estão no cabeçalho de cada
-query. A query `06_ratings_desde_2015` mostra o partition pruning. A versão DuckDB está em
-`sql/cloud/`, para não alterar o benchmark da fase 1.
-
-```bash
-# Sem AWS: verificar o DDL, ver o SQL e correr só a parte DuckDB
-python scripts/athena_setup.py --dry-run
-python scripts/athena_benchmark.py --dry-run
-python scripts/athena_benchmark.py --engines duckdb
-
-# Com AWS (normalmente basta o passo cloud)
-python scripts/athena_setup.py --dataset small --recriar
-python scripts/athena_benchmark.py --dataset small
-```
 
 ## Tecnologias
 

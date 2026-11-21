@@ -1,5 +1,4 @@
 -- qualidade.sql (Athena) - equivalente a sql/analise/qualidade.sql
--- Origem: notebook do Luís, célula 108 ("novo-queries"), consultas_sql()["qualidade"].
 --
 -- Diferenças para o DuckDB:
 -- - COUNT(DISTINCT (a, b)) não existe no Trino: os pares distintos contam-se numa subquery

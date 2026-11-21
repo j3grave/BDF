@@ -1,16 +1,13 @@
 -- ponderado.sql (DuckDB) - top 10 de filmes por média bayesiana (média ponderada)
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 108 (id "novo-queries"), consultas_sql()["ponderado"]. Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: que filmes têm a melhor média quando se "puxa" a média dos filmes com poucas
 -- avaliações para a média global? weighted = v/(v+m)*R + m/(v+m)*C, com m = 100 avaliações,
 -- R = média do filme, v = n.º de avaliações do filme e C = média global.
 --
--- Alterações face ao original:
--- - ${ratings}/${movies} em vez das views do notebook (convenção da fase 1);
--- - aliases R e C passam a media_filme e media_global (no Athena, R e r seriam o mesmo nome);
--- - acrescenta a coluna media_global, para validar a média global contra o 04_eda.py.
--- A fórmula, o peso 100 e o desempate por movieId são os do original.
+-- Notas:
+-- - os nomes R e C passam a media_filme e media_global (no Athena, R e r seriam o mesmo nome);
+-- - a coluna media_global serve para comparar a média global com a da EDA;
+-- - desempate por movieId.
 --
 -- Parâmetros: ${ratings}, ${movies}
 WITH s AS (SELECT movieId, AVG(rating) AS media_filme, COUNT(*) AS v

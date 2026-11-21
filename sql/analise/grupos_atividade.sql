@@ -1,20 +1,16 @@
 -- grupos_atividade.sql (DuckDB) - média anual por faixa de atividade total do utilizador
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 109 (id "novo-analytics"), consultas_complementares()["grupos_atividade"]. Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: os utilizadores mais ativos (no total do seu histórico) dão notas diferentes dos
 -- menos ativos? Média, em cada ano, das médias dos utilizadores de cada faixa.
 --
--- Alterações face ao original (relatório, P1 e P4):
--- - faixas novas. O MovieLens só inclui utilizadores com pelo menos 20 avaliações, por isso
---   as faixas originais "Até 5" e "6–20" ficavam sempre vazias (ou só com quem tinha
---   exatamente 20). Faixas fixas a partir de 20, iguais em todos os datasets (para os
---   comparar): 20–49, 50–99, 100–249, 250–999 e 1000 ou mais. Utilizadores por faixa:
---   small 225/137/143/93/12; 1M 1743/1352/1720/1184/41; no 32M (mediana 73, p90 364,
---   máximo 33 332) também nenhuma fica vazia;
+-- Notas:
+-- - o MovieLens só inclui utilizadores com pelo menos 20 avaliações, por isso as faixas
+--   começam em 20 e são iguais em todos os datasets (para os comparar): 20–49, 50–99,
+--   100–249, 250–999 e 1000 ou mais. Utilizadores por faixa: small 225/137/143/93/12;
+--   1M 1743/1352/1720/1184/41; no 32M (mediana 73, p90 364, máximo 33 332) nenhuma fica vazia;
 -- - faixa_min (limite inferior) para ordenar as faixas corretamente;
--- - ANY_VALUE (não existe no Athena) substituído por um join depois de agregar;
--- - year de ${ratings} (UTC) em vez de year(to_timestamp(timestamp)) (fuso).
+-- - join depois de agregar, em vez de ANY_VALUE (não existe no Athena);
+-- - o ano é a coluna year de ${ratings} (UTC).
 -- A coluna utilizadores conta pares (utilizador, ano) da faixa nesse ano: é o n.º de
 -- utilizadores da faixa ativos nesse ano.
 --

@@ -20,9 +20,6 @@ Saídas:
 Como correr:
     python scripts/03_benchmark.py --dataset small
     (ou, para todos os passos: python run_pipeline.py --dataset small)
-
-Notas:
-    Ficheiros .sql só com comentários (ex.: 10_flag_bots.sql, ainda por escrever) são ignorados.
 """
 import statistics
 import time
@@ -55,15 +52,6 @@ def sources(pq_dir):
     }
 
 
-def has_sql(text):
-    """True se o ficheiro tiver pelo menos uma linha que não seja comentário (--) nem vazia."""
-    for line in text.splitlines():
-        linha = line.strip()
-        if linha and not linha.startswith('--'):
-            return True
-    return False
-
-
 def main():
     """Corre cada query RUNS vezes em cada formato e regista a mediana e o n.º de linhas."""
     args = parse_args(__doc__)
@@ -73,9 +61,6 @@ def main():
 
     for sql_file in sorted((ROOT / 'sql').glob('*.sql')):
         text = sql_file.read_text()
-        if not has_sql(text):
-            print(f'  {sql_file.name:32} ignorado (só comentários)')
-            continue
 
         for fmt, params in sources(cfg['paths']['parquet']).items():
             # Template (e não .format) porque o SQL pode ter chavetas

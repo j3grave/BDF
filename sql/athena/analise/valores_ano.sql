@@ -1,5 +1,4 @@
 -- valores_ano.sql (Athena) - equivalente a sql/analise/valores_ano.sql
--- Origem: notebook do Luís, célula 108 ("novo-queries"), consultas_sql()["valores_ano"].
 --
 -- Fuso horário: year vem das pastas de ratings_part ou de year(from_unixtime("timestamp")),
 -- e from_unixtime devolve UTC. O resultado não depende do fuso da sessão.

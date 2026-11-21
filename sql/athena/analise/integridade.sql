@@ -1,5 +1,4 @@
 -- integridade.sql (Athena) - equivalente a sql/analise/integridade.sql
--- Origem: notebook do Luís, célula 109 ("novo-analytics"), consultas_complementares()["integridade"].
 --
 -- NOT EXISTS (portável) em vez de ANTI JOIN; colunas qualificadas.
 -- Não usa o timestamp, por isso não há questões de fuso horário.

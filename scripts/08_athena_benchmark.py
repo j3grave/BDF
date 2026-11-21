@@ -1,5 +1,5 @@
 """
-athena_benchmark.py - Fase 2: benchmark DuckDB (local) vs Athena (S3) sobre os mesmos ficheiros.
+08_athena_benchmark.py - Bloco cloud, passo 4 de 4: benchmark DuckDB (local) vs Athena (S3) sobre os mesmos ficheiros.
 
 Objetivo:
     Correr as mesmas perguntas nos dois motores e sobre os mesmos bytes: o DuckDB lê
@@ -13,9 +13,9 @@ Objetivo:
 Entradas:
     sql/athena/queries/*.sql        queries no dialeto do Athena (Trino)
     sql/<query>.sql                 a mesma query no dialeto do DuckDB (fase 1, não alterada)
-    sql/cloud/<query>.sql           queries extra só da fase 2 (dialeto do DuckDB)
-    data/cloud/<pasta>/             criado pelo prepare_cloud.py
-    Tabelas no Athena               criadas pelo athena_setup.py
+    sql/cloud/<query>.sql           queries extra só do bloco cloud (dialeto do DuckDB)
+    data/cloud/<pasta>/             criado pelo 05_prepare_cloud.py
+    Tabelas no Athena               criadas pelo 07_athena_setup.py
 
 Saídas:
     results/cloud_benchmarks.csv    motor, query, formato, mediana do tempo, tempo no motor,
@@ -25,10 +25,10 @@ Saídas:
     essa corrida não fica no CSV e o script termina com erro.
 
 Como correr:
-    python scripts/athena_benchmark.py --engines duckdb             só a parte local, sem AWS
-    python scripts/athena_benchmark.py --dry-run                    mostra o SQL do Athena, sem AWS
-    python scripts/athena_benchmark.py --dataset small
-    python scripts/athena_benchmark.py --bucket-dados X --bucket-resultados Y
+    python scripts/08_athena_benchmark.py --engines duckdb             só a parte local, sem AWS
+    python scripts/08_athena_benchmark.py --dry-run                    mostra o SQL do Athena, sem AWS
+    python scripts/08_athena_benchmark.py --dataset small
+    python scripts/08_athena_benchmark.py --bucket-dados X --bucket-resultados Y
     (por omissão: dataset do config.yaml, os dois motores e 3 corridas; os buckets, se não
     forem indicados nem estiverem no config.yaml, são derivados do ID da conta)
 
@@ -84,7 +84,7 @@ def duckdb_sources(cloud_dir):
     flat = (cloud_dir / 'ratings' / '*.parquet').as_posix()
     part = (cloud_dir / 'ratings_part' / '*' / '*.parquet').as_posix()
     movies = f"read_parquet('{(cloud_dir / 'movies' / '*.parquet').as_posix()}')"
-    # Mesmo cálculo do ano que o prepare_cloud.py (com a sessão em UTC, ver connect_duckdb)
+    # Mesmo cálculo do ano que o 05_prepare_cloud.py (com a sessão em UTC, ver connect_duckdb)
     year = 'year(to_timestamp("timestamp")) AS year'
     ler_csv = (f"read_csv('{csv_file}', header=true, delim=',', quote='\"', escape='\"', "
                f"columns={duckdb_columns(SCHEMAS['ratings'])})")
@@ -200,7 +200,7 @@ def main():
 
     if not cloud_dir.exists():
         sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. '
-                 f'Corre primeiro: python scripts/prepare_cloud.py --dataset {ds}')
+                 f'Corre primeiro: python scripts/05_prepare_cloud.py --dataset {ds}')
     if usar_athena:
         resolve_buckets(aws)
         athena = Athena(aws)

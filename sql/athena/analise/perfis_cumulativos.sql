@@ -1,5 +1,4 @@
 -- perfis_cumulativos.sql (Athena) - equivalente a sql/analise/perfis_cumulativos.sql
--- Origem: notebook do Luís, célula 109 ("novo-analytics"), consultas_complementares()["perfis_cumulativos"].
 --
 -- Fuso horário: year vem das pastas de ratings_part ou de year(from_unixtime("timestamp")),
 -- e from_unixtime devolve UTC.

@@ -1,6 +1,6 @@
 # Coordenação entre contas · MovieLens 1m
 
-Gerado por `scripts/06_coordenacao.py` (sessão DuckDB em UTC, memory_limit 12GB, fonte Parquet). **A validar com o Luís.**
+Gerado por `scripts/04_analise.py` (sessão DuckDB em UTC, memory_limit 12GB, fonte Parquet).
 
 ## Tempos
 
@@ -71,7 +71,7 @@ Comparações: 24. Bonferroni: limiar 0.05 / 24 = 0.00208. Menor valor-p empíri
 
 ## As 10 rajadas reais mais fortes (análise principal)
 
-| rajada | title | lado | inicio_hora_utc | u_15 | avaliacoes_filme_hora | pct_da_hora | desvio_max | dias_desde_estreia_dataset | antiguidade_mediana_dias | pct_no_registo | avaliacoes_conta_mediana | pct_voltaram_24h | jaccard_medio | jaccard_max | suspeitos_bloco5 |
+| rajada | title | lado | inicio_hora_utc | u_15 | avaliacoes_filme_hora | pct_da_hora | desvio_max | dias_desde_estreia_dataset | antiguidade_mediana_dias | pct_no_registo | avaliacoes_conta_mediana | pct_voltaram_24h | jaccard_medio | jaccard_max | contas_suspeitas |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | Rocky Horror Picture Show, The (1975) | 5 | 2000-11-20 08:00 | 7 | 8 | 87.5 | 1.709 | 208.11 | 0.01 | 100.0 | 565.0 | 42.9 | 0.13 | 0.246 | 0 |
 | 2 | Lost World: Jurassic Park, The (1997) | 1 | 2000-11-21 01:00 | 5 | 15 | 33.3 | 2.037 | 209.0 | 0.01 | 100.0 | 404.0 | 80.0 | 0.196 | 0.283 | 0 |

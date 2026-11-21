@@ -1,5 +1,5 @@
 """
-prepare_cloud.py - Fase 2: preparar localmente os ficheiros que vão para o S3.
+05_prepare_cloud.py - Bloco cloud, passo 1 de 4: preparar localmente os ficheiros que vão para o S3.
 
 Objetivo:
     Criar em data/cloud/<pasta>/ um espelho exato do que vai ser enviado para o S3 e
@@ -26,54 +26,54 @@ Saídas:
     <pasta> é o nome da pasta do GroupLens: ml-latest-small, ml-1m ou ml-32m.
 
 Como correr:
-    python scripts/prepare_cloud.py --dataset small
-    python scripts/prepare_cloud.py               (por omissão usa o dataset do config.yaml)
+    python scripts/05_prepare_cloud.py --dataset small
+    python scripts/05_prepare_cloud.py --dataset small --forcar   prepara mesmo que já esteja atualizada
     O envio para o S3 é feito pelo passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
+import argparse
 import shutil
 import sys
 import time
 
 import duckdb
 
-from common import ROOT, SCHEMAS, duckdb_columns, load_config, now, parse_args, size_on_disk
+from athena_common import ATHENA_TYPES, compression_of, count_of, counts_by_year, schema_of
+from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config, now, size_on_disk
 
 # Tabelas que vão para a cloud. O tags e o links não são usados por nenhuma query do Athena.
 TABELAS_CLOUD = ['ratings', 'movies']
 
-# Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
-ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
+
+def parse_args():
+    """Lê --dataset e --forcar."""
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
+    ap.add_argument('--forcar', action='store_true', help='prepara de novo, mesmo que data/cloud/ esteja atualizada')
+    return ap.parse_args()
+
+
+def motivo_para_preparar(ds, cloud_dir, manifest, pq_dir, csv_file):
+    """Motivo para preparar data/cloud/<pasta>/ de novo, ou None se já estiver atualizada.
+
+    O manifesto serve de marcador: é apagado no início e só é escrito no fim, se todas as
+    verificações passarem. Se algum ficheiro da fase 1 for mais recente do que o manifesto,
+    a pasta foi feita com dados antigos.
+    """
+    if not cloud_dir.exists():
+        return f'não existe {cloud_dir.relative_to(ROOT)}'
+    if not manifest.exists():
+        return f'não existe {manifest.relative_to(ROOT)} (preparação anterior incompleta?)'
+    t_manifest = manifest.stat().st_mtime
+    origens = [csv_file] + [f for f in pq_dir.rglob('*') if f.is_file()]
+    for f in origens:
+        if f.exists() and f.stat().st_mtime > t_manifest:
+            return f'{f.name} é mais recente do que o manifesto'
+    return None
 
 
 def mb(path):
     """Tamanho em MB (10^6 bytes, como no results/sizes.csv) de um ficheiro ou pasta."""
     return size_on_disk(path) / 1e6
-
-
-def schema_of(con, glob, hive=False):
-    """Lista [(coluna, tipo), ...] dos ficheiros Parquet indicados pelo glob."""
-    rows = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{glob}', hive_partitioning={hive})").fetchall()
-    return [(r[0], r[1]) for r in rows]
-
-
-def count_of(con, glob, hive=False):
-    """Número de linhas dos ficheiros Parquet indicados pelo glob."""
-    return con.execute(f"SELECT count(*) FROM read_parquet('{glob}', hive_partitioning={hive})").fetchone()[0]
-
-
-def compression_of(con, glob):
-    """Compressões usadas nas colunas dos ficheiros Parquet (ex.: 'SNAPPY', 'ZSTD')."""
-    rows = con.execute(f"SELECT DISTINCT compression FROM parquet_metadata('{glob}') ORDER BY 1").fetchall()
-    return ', '.join(r[0] for r in rows)
-
-
-def counts_by_year(con, glob):
-    """Dicionário {ano: n.º de linhas} de uma pasta particionada por year=AAAA."""
-    rows = con.execute(f"""
-        SELECT year, count(*) FROM read_parquet('{glob}', hive_partitioning=true)
-        GROUP BY year ORDER BY year
-    """).fetchall()
-    return {int(ano): n for ano, n in rows}
 
 
 def check_structure(cloud_dir, tables):
@@ -426,7 +426,7 @@ def verificar_tudo(con, ds, tables, pq_dir, cloud_dir, fase1_part, csv_file, csv
 
 def main():
     """Escreve data/cloud/<pasta>/, verifica tudo e, se estiver tudo certo, gera o manifesto."""
-    args = parse_args(__doc__)
+    args = parse_args()
     cfg = load_config(args.dataset)
     ds = cfg['dataset']
     pasta = cfg['source']['folder']          # ml-latest-small, ml-1m ou ml-32m
@@ -437,6 +437,11 @@ def main():
     part_dir = cloud_dir / 'ratings_part'
     manifest = ROOT / 'reports' / f'cloud_manifest_{ds}.md'
     print(f'[prepare_cloud] dataset={ds} -> data/cloud/{pasta}/')
+
+    motivo = motivo_para_preparar(ds, cloud_dir, manifest, pq_dir, csv_file)
+    if not motivo and not args.forcar:
+        print(f'[prepare_cloud] data/cloud/{pasta}/ já está atualizada (para preparar de novo: --forcar)')
+        return
 
     tables = tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file)
 

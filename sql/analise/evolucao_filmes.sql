@@ -1,23 +1,18 @@
 -- evolucao_filmes.sql (DuckDB) - filmes cuja média mais subiu ou desceu entre dois períodos de 5 anos
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 112 (id "novo-advanced"), SQL_AVANCADO["evolucao_filmes"]. Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: comparando os 5 anos anteriores com os 5 anos mais recentes, que filmes (com pelo
 -- menos 10 avaliações em cada período) mudaram mais de média?
 --
--- Alterações face ao original (relatório, P1 e P3):
--- - OPÇÃO USADA: SÓ ANOS COMPLETOS. O original terminava o período recente em MAX(ano), que é
---   um ano parcial (small: 2018 até 24/09; 32M: 2023 até 13/10; 1M: 2003 até 28/02), e
---   comparava 5 anos com pouco mais de 4. Aqui o último ano só conta se o último rating for
---   de 31 de dezembro (UTC); senão o fim passa para o ano anterior. Não se anualiza: as
---   médias de um ano parcial não precisam de anualização, mas o período ficaria desigual.
---   As colunas periodo_anterior, periodo_recente e criterio dizem, em cada linha, que anos
---   foram usados e que ano foi excluído;
--- - year de ${ratings} (UTC) em vez de year(to_timestamp(timestamp)) calculado 4 vezes por
---   linha (fuso, P1), e WHERE com os 10 anos usados (partition pruning no ratings_part);
+-- Notas:
+-- - só anos completos: o último ano só conta se o último rating for de 31 de dezembro (UTC);
+--   senão o fim passa para o ano anterior (no small, 2018 vai até 24/09; no 32M, 2023 vai
+--   até 13/10; no 1M, 2003 vai até 28/02). Assim os dois períodos têm 5 anos. As colunas
+--   periodo_anterior, periodo_recente e criterio dizem, em cada linha, que anos foram usados
+--   e que ano foi excluído;
+-- - o ano é a coluna year de ${ratings} (UTC), e o WHERE com os 10 anos usados permite o
+--   partition pruning no ratings_part;
 -- - colunas pela ordem: movieId, title, contagens, médias, variação, posições, períodos.
--- No 1M (2000-04-25 a 2003-02-28) não há 10 anos completos: o resultado é vazio, como o
--- do original (que também não tinha dados no período anterior).
+-- No 1M (2000-04-25 a 2003-02-28) não há 10 anos completos: o resultado é vazio.
 --
 -- Parâmetros: ${ratings}, ${movies}
 WITH limites AS (SELECT MAX(year) AS ano_max, MAX(timestamp) AS ts_max FROM ${ratings}),

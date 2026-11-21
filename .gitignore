@@ -1,4 +1,4 @@
-# Dados descarregados e ficheiros gerados pelo notebook
+# Dados descarregados e ficheiros gerados pelos notebooks arquivados
 ml-latest-small/
 ml-latest-small.zip
 parquet/
@@ -26,7 +26,7 @@ Thumbs.db
 .env
 *.pem
 
-# Fase 2: espelho local do que vai para o S3 (já coberto por data/, mas explícito)
+# Bloco cloud: espelho local do que vai para o S3 (já coberto por data/, mas explícito)
 data/cloud/
 
 # Credenciais AWS e afins (nunca versionar)
@@ -40,7 +40,7 @@ credentials
 *accessKeys*
 *.key
 
-# Dados do notebook do Luís (pasta de dados e zip de resultados)
+# Dados e resultados de notebooks antigos
 dados/
 lab_resultados.zip
 

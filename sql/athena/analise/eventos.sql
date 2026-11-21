@@ -1,5 +1,4 @@
 -- eventos.sql (Athena) - equivalente a sql/analise/eventos.sql
--- Origem: notebook do Luís, célula 112 ("novo-advanced"): dias_filme, view "eventos" e participantes.
 --
 -- A tabela filme x dia (14,7 M linhas no 32M) só existe como CTE. Se for precisa para outras
 -- análises, cria-se com CTAS em Parquet; nunca é devolvida ao cliente.
@@ -9,7 +8,7 @@
 -- Dia: "timestamp" / 86400 (divisão inteira no Trino = dia UTC); a data sai com
 -- CAST(from_unixtime(dia * 86400) AS date), em UTC.
 -- Frações com CAST(... AS double) (no Trino, x * 1.0 / y teria só 1 casa decimal).
--- Limites do capítulo 9 (P7), a decidir com o Luís.
+-- Limites na CTE lim, iguais aos da versão DuckDB e aos de filtros_eventos.sql.
 --
 -- Parâmetros: ${ratings}, ${movies}, ${flag_bots}
 WITH lim AS (SELECT 5 AS min_anterior, 5 AS min_utilizadores, 2.0 AS nota_baixa, 4.0 AS nota_alta,

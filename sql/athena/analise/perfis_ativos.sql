@@ -1,9 +1,8 @@
 -- perfis_ativos.sql (Athena) - equivalente a sql/analise/perfis_ativos.sql
--- Origem: notebook do Luís, célula 109 ("novo-analytics"), consultas_complementares()["perfis_ativos"].
 --
 -- Fuso horário: year vem das pastas de ratings_part ou de year(from_unixtime("timestamp")),
 -- e from_unixtime devolve UTC.
--- Diferenças para o original: count_if em vez de SUM((cond)::BIGINT); janela por extenso
+-- Notas: count_if em vez de SUM((cond)::BIGINT); janela por extenso
 -- (sem a cláusula WINDOW); GROUP BY 1, 2 (o Trino não aceita aliases no GROUP BY).
 -- Resultado agregado: no máximo 3 linhas por ano.
 --

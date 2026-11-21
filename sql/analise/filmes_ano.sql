@@ -1,18 +1,15 @@
 -- filmes_ano.sql (DuckDB) - série anual do filme que mais subiu e do que mais desceu (para gráfico)
--- Origem: notebook Lab_Parquet_DuckDB_Polars_Arrow_EDA_BDF26_G1_v1_3.ipynb (igual no _v2),
---         célula 112 (id "novo-advanced"), consulta "filmes_ano" (gravada em
---         filmes_ano_selecionados.parquet). Autor: Luís Pousada (e51d050).
 --
 -- Pergunta: como evoluiu, ano a ano, a média do filme com a maior subida (variação >= 0,5) e
 -- do filme com a maior descida (variação <= -0,5) de evolucao_filmes?
 --
--- Alterações face ao original:
--- - os filmes são escolhidos com a versão corrigida de evolucao_filmes (só anos completos);
---   as CTEs limites/fim/s/e são as mesmas de evolucao_filmes.sql;
--- - (SELECT ... LIMIT 1) UNION (SELECT ... LIMIT 1) passa a ROW_NUMBER() em CTEs (mesmo
---   resultado, portável para o Athena), e acrescenta-se a coluna tipo;
--- - year de ${ratings} (UTC) em vez de year(to_timestamp(timestamp)) (fuso).
--- A série usa todos os anos com avaliações desses filmes, como no original.
+-- Notas:
+-- - os filmes são escolhidos como em evolucao_filmes.sql (só anos completos); as CTEs
+--   limites/fim/s/e são as mesmas;
+-- - ROW_NUMBER() em CTEs escolhe um filme de cada tipo (portável para o Athena), com a
+--   coluna tipo;
+-- - o ano é a coluna year de ${ratings} (UTC).
+-- A série usa todos os anos com avaliações desses filmes.
 --
 -- Parâmetros: ${ratings}, ${movies}
 WITH limites AS (SELECT MAX(year) AS ano_max, MAX(timestamp) AS ts_max FROM ${ratings}),
