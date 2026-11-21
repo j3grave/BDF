@@ -119,10 +119,9 @@ def check_structure(cloud_dir, tables):
     return problemas
 
 
-def write_manifest(path, info):
-    """Escreve o manifesto em Markdown a partir do dicionário montado no main()."""
+def seccao_cabecalho(L, info):
+    """Título, dados gerais do dataset e lista das verificações feitas."""
     ds, pasta = info['dataset'], info['pasta']
-    L = []
     L.append(f'# Manifesto para a cloud: {pasta}')
     L.append('')
     L.append(f'- Dataset: `{ds}`')
@@ -138,6 +137,9 @@ def write_manifest(path, info):
              'Assim os dois motores leem os mesmos bytes.')
     L.append('')
 
+
+def seccao_tabelas(L, info):
+    """Tabela com o caminho, o n.º de ficheiros, o tamanho e as linhas de cada tabela."""
     L.append('## Tabelas')
     L.append('')
     L.append('| Tabela | Caminho | Ficheiros | Tamanho (MB) | Linhas | Compressão |')
@@ -147,6 +149,9 @@ def write_manifest(path, info):
                  f'{t["linhas"]:,} | {t["compressao"]} |'.replace(',', ' '))
     L.append('')
 
+
+def seccao_compressao(L, info):
+    """Tamanho de cada tabela na fase 1 (snappy) e na cloud (zstd)."""
     L.append('## Compressão: fase 1 vs cloud')
     L.append('')
     L.append('| Tabela | Origem (fase 1) | Compressão origem | MB origem | MB cloud (zstd) | Variação |')
@@ -159,6 +164,9 @@ def write_manifest(path, info):
     L.append('O `ratings_csv` é uma cópia byte a byte do CSV, sem compressão.')
     L.append('')
 
+
+def seccao_schemas(L, info):
+    """Colunas e tipos (DuckDB) de cada tabela."""
     L.append('## Schemas')
     L.append('')
     for t in info['tabelas']:
@@ -175,6 +183,9 @@ def write_manifest(path, info):
             L.append('Tipos fixados pelo `SCHEMAS` do `common.py` ao ler o CSV (com cabeçalho, separador `,`).')
         L.append('')
 
+
+def seccao_particoes(L, info):
+    """Linhas, tamanho e ficheiros de cada partição do ratings_part."""
     L.append('## ratings_part: partições')
     L.append('')
     L.append('| Ano | Linhas | Tamanho (MB) | Ficheiros |')
@@ -190,6 +201,9 @@ def write_manifest(path, info):
     L.append('Ano calculado com `year(to_timestamp("timestamp"))` em UTC.')
     L.append('')
 
+
+def seccao_tipos_athena(L, info):
+    """Correspondência de tipos DuckDB -> Athena e colunas de cada tabela para o DDL."""
     L.append('## Tipos para o DDL do Athena')
     L.append('')
     L.append('O Athena (catálogo Glue/Hive) guarda os nomes das colunas em minúsculas: `userId` passa a `userid`. '
@@ -221,6 +235,16 @@ def write_manifest(path, info):
                      "`TBLPROPERTIES ('skip.header.line.count'='1')`.")
             L.append('')
 
+
+def write_manifest(path, info):
+    """Escreve o manifesto em Markdown a partir do dicionário montado no main()."""
+    L = []
+    seccao_cabecalho(L, info)
+    seccao_tabelas(L, info)
+    seccao_compressao(L, info)
+    seccao_schemas(L, info)
+    seccao_particoes(L, info)
+    seccao_tipos_athena(L, info)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('\n'.join(L).rstrip() + '\n')
 
