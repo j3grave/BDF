@@ -136,6 +136,66 @@ def check_ddl(con, cloud_dir, instrucoes):
     return problemas
 
 
+def escolher_instrucoes(params, cloud_dir):
+    """Instruções do DDL só para as tabelas que existem neste dataset (o 1M não tem tags nem links)."""
+    instrucoes = []
+    tabelas = []
+    for ficheiro, tabela, sql in ddl_statements(params):
+        if tabela is None or (cloud_dir / tabela).exists():
+            instrucoes.append((ficheiro, tabela, sql))
+            if tabela:
+                tabelas.append(tabela)
+    return instrucoes, tabelas
+
+
+def criar_tabelas(athena, aws, instrucoes, recriar):
+    """Corre o DDL no Athena: primeiro a base de dados, depois as tabelas dentro dela."""
+    for ficheiro, table, sql in instrucoes:
+        # --recriar: apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
+        if recriar and table:
+            athena.run(f'DROP TABLE IF EXISTS `{table}`', aws['database'])
+        # 00_database.sql cria a base de dados, por isso ainda não pode correr "dentro" dela
+        if ficheiro.startswith('00_'):
+            database = None
+        else:
+            database = aws['database']
+        stats = athena.run(sql, database)
+        print(f'  {ficheiro:32} OK ({stats["total_s"]:.1f} s)')
+
+
+def validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas):
+    """Compara as contagens no Athena com as dos ficheiros locais. Devolve os bytes lidos."""
+    print('[athena_setup] validação das contagens (Athena vs data/cloud/)')
+    custo_bytes = 0
+    for table in tabelas:
+        stats = athena.run(f'SELECT count(*) FROM {table}', aws['database'])
+        custo_bytes += stats['scanned_bytes']
+        n_athena = int(athena.rows(stats['id'])[0][0])
+        n_local = local_count(con, cloud_dir, table)
+        estado = 'OK' if n_athena == n_local else 'DIFERENTE'
+        if n_athena != n_local:
+            problemas.append(f'{table}: {n_athena} linhas no Athena, {n_local} nos ficheiros')
+        print(f'  {table:12} Athena {n_athena:>12,}  local {n_local:>12,}  {estado}')
+
+    # Contagens por ano: se o MSCK REPAIR TABLE não tiver visto as pastas, faltam anos
+    stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'])
+    custo_bytes += stats['scanned_bytes']
+    por_ano_athena = {}
+    for ano, n in athena.rows(stats['id']):   # o Athena devolve texto: converte-se para int
+        por_ano_athena[int(ano)] = int(n)
+    por_ano_local = counts_by_year(con, (cloud_dir / 'ratings_part' / '*' / '*.parquet').as_posix())
+    if por_ano_athena != por_ano_local:
+        # Anos com contagens diferentes (incluindo anos que só existem num dos lados)
+        diferentes = []
+        for ano in sorted(set(por_ano_athena) | set(por_ano_local)):
+            if por_ano_athena.get(ano) != por_ano_local.get(ano):
+                diferentes.append(ano)
+        problemas.append(f'ratings_part: contagens por ano diferentes nos anos {diferentes} '
+                         '(faltou o MSCK REPAIR TABLE?)')
+    print(f'  ratings_part {len(por_ano_athena)} partições no Athena, {len(por_ano_local)} nos ficheiros')
+    return custo_bytes
+
+
 def main():
     """Verifica o DDL, cria a base de dados e as tabelas no Athena e valida as contagens."""
     args = parse_args()
@@ -155,14 +215,7 @@ def main():
     # sabemos o bucket, por isso fica um texto de exemplo.
     params = {'database': aws['database'], 'pasta': aws['pasta'],
               'bucket': aws.get('bucket_dados') or '<bucket-dados>'}
-    # Só as tabelas que existem neste dataset (o 1M não tem tags nem links)
-    instrucoes = []
-    tabelas = []
-    for ficheiro, tabela, sql in ddl_statements(params):
-        if tabela is None or (cloud_dir / tabela).exists():
-            instrucoes.append((ficheiro, tabela, sql))
-            if tabela:
-                tabelas.append(tabela)
+    instrucoes, tabelas = escolher_instrucoes(params, cloud_dir)
 
     # 1. Sem AWS: o DDL tem de coincidir com os ficheiros que foram (ou vão) para o S3
     con = duckdb.connect()
@@ -179,50 +232,11 @@ def main():
             print(f'\n-- {ficheiro}\n{sql};')
         return
 
-    # 2. Base de dados e tabelas. A base de dados corre sem contexto; o resto dentro dela.
+    # 2 e 3. Base de dados, tabelas e validação das contagens
     athena = Athena(aws)
     try:
-        for ficheiro, table, sql in instrucoes:
-            # --recriar: apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
-            if args.recriar and table:
-                athena.run(f'DROP TABLE IF EXISTS `{table}`', aws['database'])
-            # 00_database.sql cria a base de dados, por isso ainda não pode correr "dentro" dela
-            if ficheiro.startswith('00_'):
-                database = None
-            else:
-                database = aws['database']
-            stats = athena.run(sql, database)
-            print(f'  {ficheiro:32} OK ({stats["total_s"]:.1f} s)')
-
-        # 3. Validação: contagens no Athena iguais às dos ficheiros locais
-        print('[athena_setup] validação das contagens (Athena vs data/cloud/)')
-        custo_bytes = 0
-        for table in tabelas:
-            stats = athena.run(f'SELECT count(*) FROM {table}', aws['database'])
-            custo_bytes += stats['scanned_bytes']
-            n_athena = int(athena.rows(stats['id'])[0][0])
-            n_local = local_count(con, cloud_dir, table)
-            estado = 'OK' if n_athena == n_local else 'DIFERENTE'
-            if n_athena != n_local:
-                problemas.append(f'{table}: {n_athena} linhas no Athena, {n_local} nos ficheiros')
-            print(f'  {table:12} Athena {n_athena:>12,}  local {n_local:>12,}  {estado}')
-
-        # Contagens por ano: se o MSCK REPAIR TABLE não tiver visto as pastas, faltam anos
-        stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'])
-        custo_bytes += stats['scanned_bytes']
-        por_ano_athena = {}
-        for ano, n in athena.rows(stats['id']):   # o Athena devolve texto: converte-se para int
-            por_ano_athena[int(ano)] = int(n)
-        por_ano_local = counts_by_year(con, (cloud_dir / 'ratings_part' / '*' / '*.parquet').as_posix())
-        if por_ano_athena != por_ano_local:
-            # Anos com contagens diferentes (incluindo anos que só existem num dos lados)
-            diferentes = []
-            for ano in sorted(set(por_ano_athena) | set(por_ano_local)):
-                if por_ano_athena.get(ano) != por_ano_local.get(ano):
-                    diferentes.append(ano)
-            problemas.append(f'ratings_part: contagens por ano diferentes nos anos {diferentes} '
-                             '(faltou o MSCK REPAIR TABLE?)')
-        print(f'  ratings_part {len(por_ano_athena)} partições no Athena, {len(por_ano_local)} nos ficheiros')
+        criar_tabelas(athena, aws, instrucoes, args.recriar)
+        custo_bytes = validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas)
     except AthenaError as erro:
         sys.exit(f'[athena_setup] ERRO no Athena: {erro}')
 
