@@ -13,7 +13,7 @@ Gerado por `scripts/04_analise.py` em 0.3 s (sessão DuckDB em UTC).
 |---|---|---|
 | qualidade: linhas com nulos = 0 | 0 | sim |
 | qualidade: fora da escala comum = 0 | 0 | sim |
-| qualidade: pares (utilizador, filme) repetidos | 0 | sim |
+| qualidade: pares (utilizador, filme) repetidos = 0 | 0 | sim |
 | qualidade (1M): só inteiros de 1 a 5 | 0 / 0 | sim |
 | integridade: ids de filmes repetidos = 0 | 0 | sim |
 | integridade: avaliações sem filme = 0 | 0 | sim |
@@ -27,22 +27,22 @@ Gerado por `scripts/04_analise.py` em 0.3 s (sessão DuckDB em UTC).
 
 | Query | Linhas | Segundos | CSV |
 |---|---:|---:|---|
-| 10_flag_bots | 6040 | 0.048 | `10_flag_bots.csv` |
-| 10_flag_bots_calibracao | 1 | 0.002 | `10_flag_bots_calibracao.csv` |
-| anual | 4 | 0.006 | `anual.csv` |
+| 10_flag_bots | 6040 | 0.049 | `10_flag_bots.csv` |
+| 10_flag_bots_calibracao | 1 | 0.003 | `10_flag_bots_calibracao.csv` |
+| anual | 4 | 0.005 | `anual.csv` |
 | distribuicao | 5 | 0.005 | `distribuicao.csv` |
-| eventos | 100 | 0.086 | `eventos.csv` |
-| evolucao_filmes | 0 | 0.011 | `evolucao_filmes.csv` |
+| eventos | 100 | 0.064 | `eventos.csv` |
+| evolucao_filmes | 0 | 0.012 | `evolucao_filmes.csv` |
 | filmes_ano | 0 | 0.012 | `filmes_ano.csv` |
-| filtros_eventos | 1 | 0.070 | `filtros_eventos.csv` |
-| grupos_atividade | 20 | 0.007 | `grupos_atividade.csv` |
-| integridade | 1 | 0.003 | `integridade.csv` |
-| mensal | 35 | 0.012 | `mensal.csv` |
-| perfis_ativos | 4 | 0.009 | `perfis_ativos.csv` |
-| perfis_cumulativos | 4 | 0.011 | `perfis_cumulativos.csv` |
-| ponderado | 10 | 0.003 | `ponderado.csv` |
-| qualidade | 1 | 0.015 | `qualidade.csv` |
-| valores_ano | 20 | 0.005 | `valores_ano.csv` |
+| filtros_eventos | 1 | 0.057 | `filtros_eventos.csv` |
+| grupos_atividade | 20 | 0.009 | `grupos_atividade.csv` |
+| integridade | 1 | 0.004 | `integridade.csv` |
+| mensal | 35 | 0.008 | `mensal.csv` |
+| perfis_ativos | 4 | 0.008 | `perfis_ativos.csv` |
+| perfis_cumulativos | 4 | 0.012 | `perfis_cumulativos.csv` |
+| ponderado | 10 | 0.019 | `ponderado.csv` |
+| qualidade | 1 | 0.021 | `qualidade.csv` |
+| valores_ano | 20 | 0.015 | `valores_ano.csv` |
 
 ## Deteção de bots (10_flag_bots)
 

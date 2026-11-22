@@ -69,3 +69,8 @@ run_at,dataset,step,seconds
 2026-11-22T16:48:36,small,benchmark,0.37
 2026-11-22T16:48:38,small,analise,2.28
 2026-11-22T16:50:22,small,cloud,103.45
+2026-11-22T16:55:05,1m,ingest,0.28
+2026-11-22T16:55:05,1m,parquet,0.15
+2026-11-22T16:55:05,1m,benchmark,0.38
+2026-11-22T16:55:09,1m,analise,3.54
+2026-11-22T16:57:04,1m,cloud,115.24

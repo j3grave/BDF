@@ -1,6 +1,6 @@
 # Análise exploratória · MovieLens 1m
 
-Gerado por `scripts/04_analise.py` em 1.0 s.
+Gerado por `scripts/04_analise.py` em 0.9 s.
 
 ## Fontes
 
@@ -44,13 +44,13 @@ Gerado por `scripts/04_analise.py` em 1.0 s.
 
 | Tabela | Coluna | Linhas | Nulos | % nulos | Distintos (aprox.) |
 |---|---|---|---|---|---|
-| ratings | userId | 1000209 | 0 | 0.0 | 5921 |
-| ratings | movieId | 1000209 | 0 | 0.0 | 4196 |
+| ratings | userId | 1000209 | 0 | 0.0 | 5947 |
+| ratings | movieId | 1000209 | 0 | 0.0 | 3615 |
 | ratings | rating | 1000209 | 0 | 0.0 | 5 |
-| ratings | timestamp | 1000209 | 0 | 0.0 | 498578 |
-| movies | movieId | 3883 | 0 | 0.0 | 4417 |
-| movies | title | 3883 | 0 | 0.0 | 4574 |
-| movies | genres | 3883 | 0 | 0.0 | 330 |
+| ratings | timestamp | 1000209 | 0 | 0.0 | 470429 |
+| movies | movieId | 3883 | 0 | 0.0 | 3757 |
+| movies | title | 3883 | 0 | 0.0 | 3701 |
+| movies | genres | 3883 | 0 | 0.0 | 300 |
 
 ## Figuras
 

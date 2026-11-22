@@ -55,3 +55,5 @@ run_at,dataset,table,csv_mb,parquet_mb,parquet_by_year_mb,n_partitions,seconds,s
 2026-11-22T16:48:36,small,movies,0.49,0.25,,,0.004,
 2026-11-22T16:48:36,small,tags,0.12,0.05,,,0.002,
 2026-11-22T16:48:36,small,links,0.2,0.13,,,0.003,
+2026-11-22T16:55:05,1m,ratings,23.59,5.21,5.29,4,0.04,0.025
+2026-11-22T16:55:05,1m,movies,0.17,0.09,,,0.002,

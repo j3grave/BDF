@@ -4,9 +4,9 @@ Gerado por `scripts/04_analise.py` (sessão DuckDB em UTC, memory_limit 12GB, fo
 
 ## Tempos
 
-- Total: 1.6 s (0.0 min).
+- Total: 1.7 s (0.0 min).
 - Carga dos dados: 0.0 s.
-- Permutações: 20, 1.4 s no total, 0.07 s em média (a primeira inclui a verificação: 0.1 s).
+- Permutações: 20, 1.5 s no total, 0.08 s em média (a primeira inclui a verificação: 0.1 s).
 
 ## Definição
 
