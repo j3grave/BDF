@@ -1624,9 +1624,9 @@ def parse_args():
     ap.add_argument('--emular-athena', action='store_true',
                     help='parte 2: corre também as versões de sql/athena/analise/ emuladas no DuckDB e compara')
     ap.add_argument('--coordenacao', action='store_true',
-                    help='parte 3: corre o teste de coordenação entre contas (cerca de 10 min no 32M)')
+                    help='parte 3: corre o teste de coordenação entre contas (cerca de 3 s por permutação no 32M)')
     ap.add_argument('--repeticoes', type=int, default=20,
-                    help='parte 3: n.º de permutações da linha de base (20 por omissão)')
+                    help='parte 3: n.º de permutações da linha de base (20 por omissão; 800 para passar Bonferroni)')
     ap.add_argument('--memoria', default='12GB', help='parte 3: memory_limit do DuckDB (12GB por omissão)')
     return ap.parse_args()
 

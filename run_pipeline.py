@@ -31,7 +31,8 @@ Como correr:
     python run_pipeline.py --dataset small                       passos locais
     python run_pipeline.py --dataset small --resultados-locais   o mesmo, sem mexer em results/
     python run_pipeline.py --dataset 1m --steps ingest parquet   só alguns passos
-    python run_pipeline.py --dataset 1m --coordenacao            com o teste de coordenação
+    python run_pipeline.py --dataset 1m --coordenacao            com o teste de coordenação (20 permutações)
+    python run_pipeline.py --dataset 32m --coordenacao --repeticoes 800   teste conclusivo (~40 min no 32M)
     python run_pipeline.py --dataset small --steps cloud         bloco cloud (AWS Academy Learner Lab)
 """
 import argparse
@@ -61,7 +62,7 @@ def opcoes_extra(script, args):
     """Opções que o run_pipeline.py passa a cada script, além do --dataset."""
     opcoes = []
     if script == '04_analise.py' and args.coordenacao:
-        opcoes.append('--coordenacao')
+        opcoes += ['--coordenacao', '--repeticoes', str(args.repeticoes)]
     if script in ('06_upload_s3.py', '07_athena_setup.py', '08_athena_benchmark.py'):
         if args.bucket_dados:
             opcoes += ['--bucket-dados', args.bucket_dados]
@@ -195,6 +196,13 @@ def perguntar():
                      [('pipeline local (blocos 1 a 3)', STEPS_OMISSAO),
                       ('pipeline local e cloud (blocos 1 a 4, usa a AWS)', STEPS_OMISSAO + ['cloud']),
                       ('só a cloud (bloco 4, usa a AWS)', ['cloud'])], 1)
+    # 800 permutações: com 40 comparações, o valor-p mínimo 1/(R+1) só passa o limiar de Bonferroni (0,05/40) com R >= 799
+    repeticoes = None
+    if 'analise' in steps:
+        repeticoes = escolher('\nCorrer o teste de coordenação entre contas?',
+                              [('não', None),
+                               ('sim, exploratório: 20 permutações (~1 min no 32M)', 20),
+                               ('sim, conclusivo: 800 permutações (~40 min no 32M)', 800)], 2)
     locais = escolher('\nQueres atualizar os resultados do repositório (results/)?',
                       [('não: grava em results_local/, fora do git (para testar)', True),
                        ('sim: grava em results/ e ficam alterações para commit', False)], 1)
@@ -204,6 +212,8 @@ def perguntar():
     opcoes = ['--dataset', dataset, '--steps'] + steps
     if locais:
         opcoes.append('--resultados-locais')
+    if repeticoes:
+        opcoes += ['--coordenacao', '--repeticoes', str(repeticoes)]
     print('Comando equivalente: python run_pipeline.py ' + ' '.join(opcoes) + '\n')
     return opcoes
 
@@ -216,7 +226,9 @@ def main():
     parser.add_argument('--steps', nargs='+', choices=list(STEPS), default=STEPS_OMISSAO,
                         help=f"por omissão: {' '.join(STEPS_OMISSAO)} (o cloud só com --steps cloud)")
     parser.add_argument('--coordenacao', action='store_true',
-                        help='passo analise: corre também o teste de coordenação (cerca de 10 min no 32M)')
+                        help='passo analise: corre também o teste de coordenação entre contas')
+    parser.add_argument('--repeticoes', type=int, default=20,
+                        help='com --coordenacao: n.º de permutações (20 por omissão; 800 para passar Bonferroni)')
     parser.add_argument('--resultados-locais', action='store_true',
                         help='grava os resultados em results_local/ (fora do git) em vez de results/')
     parser.add_argument('--bucket-dados', dest='bucket_dados', help='só passo cloud: bucket com data/cloud/<pasta>/')

@@ -100,12 +100,14 @@ python run_pipeline.py                                 # pergunta o dataset, a c
 python run_pipeline.py --dataset small --resultados-locais   # blocos 1 a 3, sem mexer em results/
 python run_pipeline.py --dataset small                 # blocos 1 a 3
 python run_pipeline.py --dataset 1m --coordenacao      # o mesmo, com o teste de coordenação
+python run_pipeline.py --dataset 32m --coordenacao --repeticoes 800  # teste de coordenação conclusivo
 python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
 python run_pipeline.py --dataset small --steps cloud   # bloco 4 (usa a AWS)
 ```
 
 Sem opções, o `run_pipeline.py` pergunta o dataset, se corre só o pipeline local, o local e a
-cloud, ou só a cloud, e se atualiza os resultados do repositório. Por omissão não atualiza: grava
+cloud, ou só a cloud, se corre o teste de coordenação entre contas (não, exploratório com 20
+permutações, ou conclusivo com 800) e se atualiza os resultados do repositório. Por omissão não atualiza: grava
 em `results_local/`, que não está no git, e uma corrida de teste não deixa alterações para commit.
 Para atualizar `results/` (por exemplo, antes de uma entrega), responde "sim". Se escolheres a cloud, confirma logo as credenciais em `~/.aws/credentials`:
 se não forem válidas, mostra quando o ficheiro foi alterado pela última vez e espera. Enquanto
@@ -150,10 +152,11 @@ O `04_analise.py` tem três partes:
 2. **Análises:** as 16 queries de `sql/analise/` (qualidade, integridade, evolução no tempo,
    filmes, uso da escala e utilizadores suspeitos), um CSV por query. Verifica a qualidade e a
    integridade dos dados e compara os totais com a EDA. Se uma verificação falhar, o pipeline pára.
-3. **Coordenação entre contas** (só com `--coordenacao`, porque demora cerca de 10 minutos no
-   32M): procura rajadas, em que várias contas dão a mesma nota extrema ao mesmo filme na mesma
+3. **Coordenação entre contas** (só com `--coordenacao`, ou quando se escolhe no menu, porque
+   cada permutação demora cerca de 3 segundos no 32M): procura rajadas, em que várias contas dão a mesma nota extrema ao mesmo filme na mesma
    hora, longe da média do filme, e compara-as com uma linha de base em que os timestamps são
-   baralhados dentro de cada filme.
+   baralhados dentro de cada filme. Com 40 comparações, só a partir de 800 permutações
+   (`--repeticoes 800`, cerca de 40 minutos no 32M) um resultado pode passar a correção de Bonferroni.
 
 ```bash
 python scripts/04_analise.py --dataset small                  # o mesmo que o passo analise
