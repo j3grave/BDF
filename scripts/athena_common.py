@@ -140,7 +140,7 @@ def read_sql(path, params):
     O Athena aceita uma só instrução por pedido; os comentários ficam nos ficheiros para
     quem os lê, mas não são enviados (alguns comandos de DDL não os aceitam no início).
     """
-    linhas = [linha for linha in path.read_text().splitlines() if not linha.strip().startswith('--')]
+    linhas = [linha for linha in path.read_text(encoding='utf-8').splitlines() if not linha.strip().startswith('--')]
     sql = Template('\n'.join(linhas)).substitute(params).strip()
     return sql.rstrip(';').strip()
 

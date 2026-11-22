@@ -54,7 +54,7 @@ def main():
     print(f'[benchmark] dataset={ds}')
 
     for sql_file in sorted((ROOT / 'sql').glob('*.sql')):
-        text = sql_file.read_text()
+        text = sql_file.read_text(encoding='utf-8')
 
         for fmt, params in sources(cfg['paths']['parquet']).items():
             # Template (e não .format) porque o SQL pode ter chavetas

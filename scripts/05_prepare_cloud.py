@@ -236,7 +236,7 @@ def write_manifest(path, info):
     seccao_particoes(L, info)
     seccao_tipos_athena(L, info)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('\n'.join(L).rstrip() + '\n')
+    path.write_text('\n'.join(L).rstrip() + '\n', encoding='utf-8')
 
 
 def copiar_tabelas(con, tables, pq_dir, cloud_dir):

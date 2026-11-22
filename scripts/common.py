@@ -48,7 +48,7 @@ SCHEMAS = {
 
 def load_config(dataset=None):
     """Lê o config.yaml, aplica o --dataset (se vier) e acrescenta os caminhos das pastas."""
-    cfg = yaml.safe_load((ROOT / 'config.yaml').read_text())
+    cfg = yaml.safe_load((ROOT / 'config.yaml').read_text(encoding='utf-8'))
 
     # O --dataset da linha de comandos tem prioridade sobre o valor do config.yaml
     if dataset:
@@ -114,7 +114,7 @@ def append_row(csv_path, row):
     # Quando um script passa a registar uma coluna nova, o CSV antigo tem outro cabeçalho.
     # Em vez de escrever linhas desalinhadas, reescrevemos o ficheiro com as colunas atualizadas.
     if csv_path.exists():
-        with csv_path.open(newline='') as f:
+        with csv_path.open(newline='', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             old_fields = reader.fieldnames or []
             old_rows = list(reader)
@@ -126,7 +126,7 @@ def append_row(csv_path, row):
                 if coluna not in row:
                     fields.append(coluna)
 
-            with csv_path.open('w', newline='') as f:
+            with csv_path.open('w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=fields, restval='')
                 writer.writeheader()
                 writer.writerows(old_rows)
@@ -138,7 +138,7 @@ def append_row(csv_path, row):
             row = linha_completa
 
     new = not csv_path.exists()
-    with csv_path.open('a', newline='') as f:
+    with csv_path.open('a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=list(row))
         if new:
             writer.writeheader()

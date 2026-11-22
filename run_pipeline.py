@@ -130,7 +130,7 @@ def gravar_credenciais(texto):
         return False
     caminho = ficheiro_credenciais()
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    caminho.write_text('\n'.join(linhas) + '\n')
+    caminho.write_text('\n'.join(linhas) + '\n', encoding='utf-8')
     caminho.chmod(0o600)   # só o próprio utilizador lê o ficheiro, como faz a AWS CLI
     print(f'Bloco [default] gravado em {caminho}.')
     return True
@@ -152,7 +152,7 @@ def diagnostico_credenciais(region, erro):
     print(f"  O boto3 está a ler as credenciais de: {credenciais.method if credenciais else 'nenhum sítio'}")
     caminho = ficheiro_credenciais()
     if caminho.exists():
-        linhas = caminho.read_text(errors='replace').splitlines()
+        linhas = caminho.read_text(encoding='utf-8', errors='replace').splitlines()
         chaves = [c for c in ('aws_access_key_id', 'aws_secret_access_key', 'aws_session_token')
                   if any(linha.strip().startswith(c) for linha in linhas)]
         estranhos = any(not (32 <= ord(c) < 127) for linha in linhas for c in linha)

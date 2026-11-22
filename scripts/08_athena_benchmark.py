@@ -102,13 +102,13 @@ def load_queries():
                 break
         if duckdb_file is None:
             sys.exit(f'Erro: {athena_file.name} não tem versão DuckDB em sql/ nem em sql/cloud/')
-        texto_athena = athena_file.read_text()
+        texto_athena = athena_file.read_text(encoding='utf-8')
         # Queries que só usam movies não dependem do formato dos ratings: correm uma vez
         if '${ratings}' in texto_athena:
             formatos = FORMATOS_RATINGS
         else:
             formatos = ['parquet']
-        queries.append((nome, athena_file, duckdb_file.read_text(), formatos))
+        queries.append((nome, athena_file, duckdb_file.read_text(encoding='utf-8'), formatos))
     return queries
 
 
