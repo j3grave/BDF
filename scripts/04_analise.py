@@ -830,7 +830,7 @@ def verificar(pasta, ds):
         q = qual.iloc[0]
         res.append(('qualidade: linhas com nulos = 0', int(q.linhas_com_nulos), q.linhas_com_nulos == 0))
         res.append(('qualidade: fora da escala comum = 0', int(q.fora_dominio_comum), q.fora_dominio_comum == 0))
-        res.append(('qualidade: pares (utilizador, filme) repetidos', int(q.pares_repetidos), True))
+        res.append(('qualidade: pares (utilizador, filme) repetidos = 0', int(q.pares_repetidos), q.pares_repetidos == 0))
         if ds == '1m':   # o 1M só tem estrelas inteiras de 1 a 5
             ok = q.nao_inteiros == 0 and q.inferior_a_um == 0
             res.append(('qualidade (1M): só inteiros de 1 a 5', f'{int(q.nao_inteiros)} / {int(q.inferior_a_um)}', ok))
