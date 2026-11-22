@@ -142,6 +142,9 @@ def criar_tabelas(athena, aws, instrucoes, recriar):
         else:
             database = aws['database']
         stats = athena.run(sql, database)
+        # Guarda depois de correr: a base de dados já existe quando o 00_ é guardado
+        athena.guardar(f"{aws['database']} - ddl {ficheiro[:-4]}", sql, aws['database'],
+                       f'DDL de sql/athena/ddl/{ficheiro} (07_athena_setup.py)')
         print(f'  {ficheiro:32} OK ({stats["total_s"]:.1f} s)')
 
 
@@ -150,7 +153,8 @@ def validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas):
     print('[athena_setup] validação das contagens (Athena vs data/cloud/)')
     custo_bytes = 0
     for table in tabelas:
-        stats = athena.run(f'SELECT count(*) FROM {table}', aws['database'])
+        stats = athena.run(f'SELECT count(*) FROM {table}', aws['database'],
+                           nome=f"{aws['database']} - validacao contagem {table}")
         custo_bytes += stats['scanned_bytes']
         n_athena = int(athena.rows(stats['id'])[0][0])
         n_local = local_count(con, cloud_dir, table)
@@ -160,7 +164,8 @@ def validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas):
         print(f'  {table:12} Athena {n_athena:>12,}  local {n_local:>12,}  {estado}')
 
     # Contagens por ano: se o MSCK REPAIR TABLE não tiver visto as pastas, faltam anos
-    stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'])
+    stats = athena.run('SELECT year, count(*) FROM ratings_part GROUP BY year ORDER BY year', aws['database'],
+                       nome=f"{aws['database']} - validacao contagem por ano")
     custo_bytes += stats['scanned_bytes']
     por_ano_athena = {}
     for ano, n in athena.rows(stats['id']):   # o Athena devolve texto: converte-se para int

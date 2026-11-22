@@ -109,9 +109,9 @@ cloud, ou só a cloud, e se atualiza os resultados do repositório. Por omissão
 em `results_local/`, que não está no git, e uma corrida de teste não deixa alterações para commit.
 Para atualizar `results/` (por exemplo, antes de uma entrega), responde "sim". Se escolheres a cloud, confirma logo as credenciais em `~/.aws/credentials`:
 se não forem válidas, mostra quando o ficheiro foi alterado pela última vez e espera. Enquanto
-espera, esse terminal não aceita comandos: copia o bloco `[default]` do Learner Lab e escreve `c`,
+espera, esse terminal não aceita comandos: copia o bloco `[default]` do Learner Lab e carrega Enter,
 e o pipeline grava-o em `~/.aws/credentials` (só se for mesmo esse bloco, e sem mostrar as chaves).
-Também podes atualizar o ficheiro noutro terminal e carregar Enter. No fim das perguntas mostra o comando equivalente, para a próxima
+Se continuar a falhar, mostra o código de erro da AWS e de onde está a ler as credenciais. No fim das perguntas mostra o comando equivalente, para a próxima
 vez. Com opções, não pergunta nada; sem `--dataset`, usa o valor do `config.yaml`. Cada script também corre sozinho, por exemplo
 `python scripts/02_to_parquet.py --dataset 1m`. Se um script falhar, o pipeline pára.
 
@@ -237,6 +237,12 @@ O passo `cloud` não corre por omissão. Corre quatro scripts, por ordem, e pár
 4. **`08_athena_benchmark.py`** corre as queries de `sql/athena/queries/` no Athena e as mesmas
    perguntas no DuckDB sobre `data/cloud/`, em CSV, Parquet e Parquet particionado. Uma query só é
    gravada em `results/cloud_benchmarks.csv` se devolver o mesmo n.º de linhas nos dois motores.
+
+Os scripts 07 e 08 guardam cada query em **Saved queries** do Athena, com nomes como
+`movielens_32m - ddl 01_ratings` ou `movielens_32m - 06_ratings_desde_2015 [parquet_part]`. Se o
+nome já existir, a query é atualizada em vez de duplicada. No histórico (**Recent queries**), as
+SELECT começam por um comentário com o mesmo nome, para se saber qual é cada execução. Se a conta
+não deixar guardar queries, o script avisa e continua.
 
 Pode voltar a correr-se: os buckets e os ficheiros que já existem são reaproveitados.
 
