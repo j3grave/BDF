@@ -1,7 +1,7 @@
 # Manifesto para a cloud: ml-latest-small
 
 - Dataset: `small`
-- Gerado em: 2026-11-21T16:58:12 (DuckDB 1.5.6, 0.1 s)
+- Gerado em: 2026-11-22T16:48:38 (DuckDB 2.0.0, 0.1 s)
 - Pasta local: `data/cloud/ml-latest-small/` (origem: `data/small/parquet/` e `data/small/csv/ratings.csv`)
 - Upload: `python run_pipeline.py --dataset small --steps cloud` (envia para `s3://<bucket-dados>/ml-latest-small/`)
 - Verificações: contagens iguais à origem, soma das partições igual a `ratings`, contagens por ano iguais ao `ratings_by_year` da fase 1, tipos iguais à origem, `year` só no nome das pastas, compressão zstd e só ficheiros da tabela em cada pasta. Todas passaram.
@@ -13,7 +13,7 @@
 | Tabela | Caminho | Ficheiros | Tamanho (MB) | Linhas | Compressão |
 |---|---|---:|---:|---:|---|
 | ratings | `ratings/` | 1 | 0.50 | 100 836 | ZSTD |
-| ratings_part | `ratings_part/year=AAAA/` | 23 | 0.50 | 100 836 | ZSTD |
+| ratings_part | `ratings_part/year=AAAA/` | 23 | 0.51 | 100 836 | ZSTD |
 | ratings_csv | `ratings_csv/` | 1 | 2.48 | 100 836 | nenhuma (CSV) |
 | movies | `movies/` | 1 | 0.16 | 9 742 | ZSTD |
 
@@ -22,7 +22,7 @@
 | Tabela | Origem (fase 1) | Compressão origem | MB origem | MB cloud (zstd) | Variação |
 |---|---|---|---:|---:|---:|
 | ratings | `data/small/parquet/ratings.parquet` | SNAPPY | 0.69 | 0.50 | -26.9 % |
-| ratings_part | `data/small/parquet/ratings_by_year/` | SNAPPY | 0.77 | 0.50 | -35.1 % |
+| ratings_part | `data/small/parquet/ratings_by_year/` | SNAPPY | 0.78 | 0.51 | -34.8 % |
 | movies | `data/small/parquet/movies.parquet` | SNAPPY | 0.25 | 0.16 | -33.4 % |
 
 O `ratings_csv` é uma cópia byte a byte do CSV, sem compressão.
@@ -94,7 +94,7 @@ Tipos fixados pelo `SCHEMAS` do `common.py` ao ler o CSV (com cabeçalho, separa
 | 2016 | 6 703 | 0.03 | 1 |
 | 2017 | 8 198 | 0.04 | 1 |
 | 2018 | 6 418 | 0.03 | 1 |
-| **Total (23 anos)** | **100 836** | **0.50** | **23** |
+| **Total (23 anos)** | **100 836** | **0.51** | **23** |
 
 Ano calculado com `year(to_timestamp("timestamp"))` em UTC.
 
