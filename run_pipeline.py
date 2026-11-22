@@ -87,19 +87,70 @@ def escolher(pergunta, opcoes, omissao):
         print(f'  Escolhe um número de 1 a {len(opcoes)}.')
 
 
+def ficheiro_credenciais():
+    """Caminho do ficheiro de credenciais que o boto3 lê (o ~/.aws/credentials, salvo indicação em contrário)."""
+    return Path(os.environ.get('AWS_SHARED_CREDENTIALS_FILE', Path.home() / '.aws' / 'credentials')).expanduser()
+
+
+def ler_clipboard():
+    """Texto copiado (macOS e Windows), ou None se não for possível lê-lo neste sistema."""
+    if sys.platform == 'darwin':
+        comando = ['pbpaste']
+    elif sys.platform == 'win32':
+        comando = ['powershell', '-NoProfile', '-Command', 'Get-Clipboard']
+    else:
+        return None
+    try:
+        return subprocess.run(comando, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def gravar_credenciais(texto):
+    """Grava o bloco [default] copiado do Learner Lab no ficheiro de credenciais. Nunca mostra as chaves."""
+    if texto is None:
+        print('Neste sistema não consigo ler o que foi copiado: atualiza o ficheiro noutro terminal.')
+        return
+    linhas = [linha.strip() for linha in texto.strip().splitlines() if linha.strip()]
+    chaves = ('aws_access_key_id', 'aws_secret_access_key', 'aws_session_token')
+    em_falta = []
+    for chave in chaves:
+        if not any(linha.startswith(chave) for linha in linhas):
+            em_falta.append(chave)
+    if not linhas or linhas[0] != '[default]' or em_falta:
+        # Não gravar outra coisa por cima das credenciais (ex.: se entretanto se copiou outro texto)
+        print('O texto copiado não é o bloco [default] do Learner Lab (com aws_access_key_id, '
+              'aws_secret_access_key e aws_session_token). Copia-o de novo em "AWS Details" > "AWS CLI: Show".')
+        return
+    caminho = ficheiro_credenciais()
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text('\n'.join(linhas) + '\n')
+    caminho.chmod(0o600)   # só o próprio utilizador lê o ficheiro, como faz a AWS CLI
+    print(f'Bloco [default] gravado em {caminho}.')
+
+
 def confirmar_credenciais(region):
     """Confirma as credenciais AWS antes de começar. Se não forem válidas, espera que sejam atualizadas."""
-    # As chaves nunca são escritas no terminal: o pipeline só lê o ~/.aws/credentials
     from athena_common import account_id, boto3_session
     while True:
         try:
             account_id(boto3_session(region))
             print('Credenciais AWS válidas.\n')
             return
-        except SystemExit as erro:
-            print(erro)
-            input('\nDepois de atualizares o ~/.aws/credentials, carrega Enter para confirmar de novo '
-                  '(Ctrl+C para sair). ')
+        except SystemExit:
+            print('As credenciais AWS não existem, expiraram ou são inválidas. No Learner Lab: "Start Lab",\n'
+                  'esperar pelo indicador verde e, em "AWS Details" > "AWS CLI: Show", copiar o bloco [default].')
+        caminho = ficheiro_credenciais()
+        if caminho.exists():
+            alterado = time.strftime('%d/%m/%Y %H:%M', time.localtime(caminho.stat().st_mtime))
+            print(f'\n{caminho} foi alterado pela última vez a {alterado}.')
+        else:
+            print(f'\n{caminho} não existe.')
+        # Este terminal está à espera da resposta, por isso aqui não se podem correr comandos (ex.: pbpaste)
+        print('Depois de o copiares, escreve c aqui, ou atualiza o ficheiro noutro terminal e carrega Enter.')
+        resposta = input('c + Enter: gravar o bloco copiado · Enter: confirmar de novo · Ctrl+C: sair > ')
+        if resposta.strip().lower() == 'c':
+            gravar_credenciais(ler_clipboard())
 
 
 def perguntar():

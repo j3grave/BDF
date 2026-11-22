@@ -108,8 +108,10 @@ Sem opções, o `run_pipeline.py` pergunta o dataset, se corre só o pipeline lo
 cloud, ou só a cloud, e se atualiza os resultados do repositório. Por omissão não atualiza: grava
 em `results_local/`, que não está no git, e uma corrida de teste não deixa alterações para commit.
 Para atualizar `results/` (por exemplo, antes de uma entrega), responde "sim". Se escolheres a cloud, confirma logo as credenciais em `~/.aws/credentials`:
-se não forem válidas, mostra as instruções do Learner Lab e espera que as atualizes. As chaves
-nunca são escritas no terminal. No fim das perguntas mostra o comando equivalente, para a próxima
+se não forem válidas, mostra quando o ficheiro foi alterado pela última vez e espera. Enquanto
+espera, esse terminal não aceita comandos: copia o bloco `[default]` do Learner Lab e escreve `c`,
+e o pipeline grava-o em `~/.aws/credentials` (só se for mesmo esse bloco, e sem mostrar as chaves).
+Também podes atualizar o ficheiro noutro terminal e carregar Enter. No fim das perguntas mostra o comando equivalente, para a próxima
 vez. Com opções, não pergunta nada; sem `--dataset`, usa o valor do `config.yaml`. Cada script também corre sozinho, por exemplo
 `python scripts/02_to_parquet.py --dataset 1m`. Se um script falhar, o pipeline pára.
 
