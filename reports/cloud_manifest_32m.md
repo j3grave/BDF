@@ -1,7 +1,7 @@
 # Manifesto para a cloud: ml-32m
 
 - Dataset: `32m`
-- Gerado em: 2026-11-21T15:15:44 (DuckDB 2.0.0, 1.9 s)
+- Gerado em: 2026-11-22T10:37:00 (DuckDB 2.0.0, 2.6 s)
 - Pasta local: `data/cloud/ml-32m/` (origem: `data/32m/parquet/` e `data/32m/csv/ratings.csv`)
 - Upload: `python run_pipeline.py --dataset 32m --steps cloud` (envia para `s3://<bucket-dados>/ml-32m/`)
 - Verificações: contagens iguais à origem, soma das partições igual a `ratings`, contagens por ano iguais ao `ratings_by_year` da fase 1, tipos iguais à origem, `year` só no nome das pastas, compressão zstd e só ficheiros da tabela em cada pasta. Todas passaram.
@@ -12,8 +12,8 @@
 
 | Tabela | Caminho | Ficheiros | Tamanho (MB) | Linhas | Compressão |
 |---|---|---:|---:|---:|---|
-| ratings | `ratings/` | 1 | 158.94 | 32 000 204 | ZSTD |
-| ratings_part | `ratings_part/year=AAAA/` | 29 | 151.09 | 32 000 204 | ZSTD |
+| ratings | `ratings/` | 1 | 158.88 | 32 000 204 | ZSTD |
+| ratings_part | `ratings_part/year=AAAA/` | 29 | 151.12 | 32 000 204 | ZSTD |
 | ratings_csv | `ratings_csv/` | 1 | 877.08 | 32 000 204 | nenhuma (CSV) |
 | movies | `movies/` | 1 | 1.40 | 87 585 | ZSTD |
 
@@ -21,8 +21,8 @@
 
 | Tabela | Origem (fase 1) | Compressão origem | MB origem | MB cloud (zstd) | Variação |
 |---|---|---|---:|---:|---:|
-| ratings | `data/32m/parquet/ratings.parquet` | SNAPPY | 217.75 | 158.94 | -27.0 % |
-| ratings_part | `data/32m/parquet/ratings_by_year/` | SNAPPY | 214.05 | 151.09 | -29.4 % |
+| ratings | `data/32m/parquet/ratings.parquet` | SNAPPY | 217.71 | 158.88 | -27.0 % |
+| ratings_part | `data/32m/parquet/ratings_by_year/` | SNAPPY | 210.90 | 151.12 | -28.3 % |
 | movies | `data/32m/parquet/movies.parquet` | SNAPPY | 2.19 | 1.40 | -35.9 % |
 
 O `ratings_csv` é uma cópia byte a byte do CSV, sem compressão.
@@ -72,35 +72,35 @@ Tipos fixados pelo `SCHEMAS` do `common.py` ao ler o CSV (com cabeçalho, separa
 | Ano | Linhas | Tamanho (MB) | Ficheiros |
 |---|---:|---:|---:|
 | 1995 | 4 | 0.00 | 1 |
-| 1996 | 1 571 368 | 5.43 | 1 |
-| 1997 | 685 388 | 2.52 | 1 |
+| 1996 | 1 571 368 | 5.42 | 1 |
+| 1997 | 685 388 | 2.51 | 1 |
 | 1998 | 301 691 | 1.15 | 1 |
-| 1999 | 1 174 629 | 4.55 | 1 |
+| 1999 | 1 174 629 | 4.57 | 1 |
 | 2000 | 1 912 322 | 7.73 | 1 |
 | 2001 | 1 160 098 | 5.08 | 1 |
-| 2002 | 849 762 | 3.86 | 1 |
+| 2002 | 849 762 | 3.87 | 1 |
 | 2003 | 1 011 000 | 4.83 | 1 |
-| 2004 | 1 139 068 | 5.35 | 1 |
-| 2005 | 1 752 573 | 8.21 | 1 |
+| 2004 | 1 139 068 | 5.37 | 1 |
+| 2005 | 1 752 573 | 8.20 | 1 |
 | 2006 | 1 141 704 | 5.45 | 1 |
-| 2007 | 1 023 813 | 5.07 | 1 |
+| 2007 | 1 023 813 | 5.09 | 1 |
 | 2008 | 1 117 071 | 5.36 | 1 |
-| 2009 | 890 696 | 4.46 | 1 |
+| 2009 | 890 696 | 4.44 | 1 |
 | 2010 | 860 073 | 4.40 | 1 |
-| 2011 | 729 301 | 3.80 | 1 |
+| 2011 | 729 301 | 3.79 | 1 |
 | 2012 | 695 493 | 3.49 | 1 |
 | 2013 | 563 301 | 2.85 | 1 |
 | 2014 | 518 537 | 2.62 | 1 |
 | 2015 | 1 743 866 | 8.57 | 1 |
-| 2016 | 1 918 739 | 9.44 | 1 |
-| 2017 | 1 827 953 | 8.92 | 1 |
-| 2018 | 1 391 057 | 6.99 | 1 |
-| 2019 | 1 385 467 | 6.97 | 1 |
-| 2020 | 1 688 159 | 8.48 | 1 |
-| 2021 | 1 239 912 | 6.43 | 1 |
-| 2022 | 913 105 | 4.87 | 1 |
-| 2023 | 794 054 | 4.20 | 1 |
-| **Total (29 anos)** | **32 000 204** | **151.09** | **29** |
+| 2016 | 1 918 739 | 9.43 | 1 |
+| 2017 | 1 827 953 | 8.95 | 1 |
+| 2018 | 1 391 057 | 6.97 | 1 |
+| 2019 | 1 385 467 | 7.03 | 1 |
+| 2020 | 1 688 159 | 8.46 | 1 |
+| 2021 | 1 239 912 | 6.45 | 1 |
+| 2022 | 913 105 | 4.88 | 1 |
+| 2023 | 794 054 | 4.15 | 1 |
+| **Total (29 anos)** | **32 000 204** | **151.12** | **29** |
 
 Ano calculado com `year(to_timestamp("timestamp"))` em UTC.
 
