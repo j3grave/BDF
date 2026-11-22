@@ -830,7 +830,7 @@ def verificar(pasta, ds):
         q = qual.iloc[0]
         res.append(('qualidade: linhas com nulos = 0', int(q.linhas_com_nulos), q.linhas_com_nulos == 0))
         res.append(('qualidade: fora da escala comum = 0', int(q.fora_dominio_comum), q.fora_dominio_comum == 0))
-        res.append(('qualidade: pares (utilizador, filme) repetidos', int(q.pares_repetidos), True))
+        res.append(('qualidade: pares (utilizador, filme) repetidos = 0', int(q.pares_repetidos), q.pares_repetidos == 0))
         if ds == '1m':   # o 1M só tem estrelas inteiras de 1 a 5
             ok = q.nao_inteiros == 0 and q.inferior_a_um == 0
             res.append(('qualidade (1M): só inteiros de 1 a 5', f'{int(q.nao_inteiros)} / {int(q.inferior_a_um)}', ok))
@@ -1624,9 +1624,9 @@ def parse_args():
     ap.add_argument('--emular-athena', action='store_true',
                     help='parte 2: corre também as versões de sql/athena/analise/ emuladas no DuckDB e compara')
     ap.add_argument('--coordenacao', action='store_true',
-                    help='parte 3: corre o teste de coordenação entre contas (cerca de 10 min no 32M)')
+                    help='parte 3: corre o teste de coordenação entre contas (cerca de 3 s por permutação no 32M)')
     ap.add_argument('--repeticoes', type=int, default=20,
-                    help='parte 3: n.º de permutações da linha de base (20 por omissão)')
+                    help='parte 3: n.º de permutações da linha de base (20 por omissão; 800 para passar Bonferroni)')
     ap.add_argument('--memoria', default='12GB', help='parte 3: memory_limit do DuckDB (12GB por omissão)')
     return ap.parse_args()
 

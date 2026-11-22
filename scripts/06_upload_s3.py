@@ -2,7 +2,7 @@
 06_upload_s3.py - Bloco cloud, passo 2 de 4: enviar data/cloud/<pasta>/ para o S3.
 
 Objetivo:
-    Confirmar as credenciais, criar os dois buckets (se ainda não existirem), um para dados e outro para resultadose enviar para s3://<bucket-dados>/<pasta>/ os ficheiros novos ou com tamanho diferente, como o
+    Confirmar as credenciais, criar os dois buckets (se ainda não existirem), um para dados e outro para resultadose enviar para s3://<bucket-dados>/<pasta>/ os ficheiros novos ou alterados (outro tamanho ou data mais recente), como o
     "aws s3 sync" (mas sem precisar da AWS CLI: usa o boto3). Não apaga nada no S3!!!
     O boto3 é o SDK oficial da AWS para Python. É uma biblioteca que permite fazer por código tudo o que no lab fizemos à mão, na consola.
     Não isamos nas aulas pq os lab foram efetuados pela interface web.
@@ -60,18 +60,18 @@ def ensure_bucket(s3, bucket, region):
     return True
 
 
-def remote_sizes(s3, bucket, prefix):
-    """Dicionário {chave: tamanho em bytes} dos objetos em s3://bucket/prefix (com paginação)."""
-    tamanhos = {}
+def remote_objects(s3, bucket, prefix):
+    """Dicionário {chave: (tamanho em bytes, data do upload)} dos objetos em s3://bucket/prefix (com paginação)."""
+    objetos = {}
     for pagina in s3.get_paginator('list_objects_v2').paginate(Bucket=bucket, Prefix=prefix):
         for obj in pagina.get('Contents', []):
-            tamanhos[obj['Key']] = obj['Size']
-    return tamanhos
+            objetos[obj['Key']] = (obj['Size'], obj['LastModified'].timestamp())
+    return objetos
 
 
 def sync_to_s3(s3, cloud_dir, bucket, pasta):
-    """Envia data/cloud/<pasta>/ para s3://bucket/<pasta>/, só os ficheiros novos ou com tamanho diferente."""
-    remotos = remote_sizes(s3, bucket, f'{pasta}/')
+    """Envia data/cloud/<pasta>/ para s3://bucket/<pasta>/, só os ficheiros novos ou alterados."""
+    remotos = remote_objects(s3, bucket, f'{pasta}/')
     locais = sorted(f for f in cloud_dir.rglob('*') if f.is_file() and f.name != '.DS_Store')
     enviados, saltados, bytes_enviados = 0, 0, 0
     chaves_locais = set()
@@ -82,7 +82,10 @@ def sync_to_s3(s3, cloud_dir, bucket, pasta):
         chave = f'{pasta}/{f.relative_to(cloud_dir).as_posix()}'
         chaves_locais.add(chave)
         tamanho = f.stat().st_size
-        if remotos.get(chave) == tamanho:
+        # Como o "aws s3 sync": igual se tiver o mesmo tamanho e não tiver mudado depois do último upload.
+        # Não usamos o ETag porque, acima de 8 MB, o boto3 envia por partes e o ETag deixa de ser o MD5.
+        remoto = remotos.get(chave)
+        if remoto and remoto[0] == tamanho and remoto[1] >= f.stat().st_mtime:
             saltados += 1
             continue
         print(f'    {chave} ({tamanho / 1e6:.2f} MB)', flush=True)
