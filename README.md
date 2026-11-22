@@ -227,7 +227,7 @@ O passo `cloud` não corre por omissão. Corre quatro scripts, por ordem, e pár
    `--forcar` prepara de novo. Não contacta a AWS.
 2. **`06_upload_s3.py`** confirma as credenciais (se faltarem ou tiverem expirado, explica como as
    renovar), cria os buckets em `us-east-1` se não existirem (`bdf26-g1-dados-<ID da conta>` e
-   `bdf26-g1-resultados-<ID da conta>`) e envia os ficheiros novos ou com outro tamanho. Não apaga
+   `bdf26-g1-resultados-<ID da conta>`) e envia os ficheiros novos ou alterados (outro tamanho ou data mais recente). Não apaga
    nada no S3. O ID da conta só aparece no ecrã e nunca é gravado. Para usar outros nomes, passa
    `--bucket-dados` e `--bucket-resultados` ou escreve-os no `config.yaml`.
 3. **`07_athena_setup.py --recriar`** cria a base de dados `movielens_<dataset>` e as quatro
