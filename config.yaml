@@ -10,7 +10,7 @@ results_dir: results    # tamanhos, tempos e benchmarks
 # As credenciais NUNCA ficam aqui (vão para ~/.aws/credentials).
 # O AWS Academy Learner Lab só permite us-east-1 e us-west-2.
 #
-# Buckets: null significa "derivado da conta". Cada aluno fica com os seus, sem configurar nada:
+# Buckets: null significa "derivado da conta". Cada um fica com os seus, sem configurar nada:
 #   bdf26-g1-dados-<ID da conta>       ficheiros de data/cloud/<pasta>/
 #   bdf26-g1-resultados-<ID da conta>  resultados das queries do Athena
 # Para usar outros buckets, escreve aqui o nome ou passa --bucket-dados / --bucket-resultados.
