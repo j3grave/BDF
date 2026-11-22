@@ -137,9 +137,9 @@ def bench_duckdb(sql, runs):
     return statistics.median(tempos), n_linhas
 
 
-def bench_athena(athena, sql, database, runs):
+def bench_athena(athena, sql, database, runs, nome):
     """Corre a query runs vezes no Athena e devolve as medianas, os MB lidos e o n.º de linhas."""
-    corridas = [athena.run(sql, database) for _ in range(runs)]
+    corridas = [athena.run(sql, database, nome=nome) for _ in range(runs)]
     return {
         'median_s': statistics.median(c['total_s'] for c in corridas),
         'median_engine_s': statistics.median(c['engine_s'] for c in corridas),
@@ -161,7 +161,9 @@ def linha_duckdb(ds, nome, fmt, sql, runs):
 def linha_athena(athena, database, ds, nome, fmt, sql, runs):
     """Corre uma query no Athena e devolve a linha para o CSV e os bytes lidos por corrida."""
     try:
-        r = bench_athena(athena, sql, database, runs)
+        rotulo = f'{database} - {nome} [{fmt}]'
+        athena.guardar(rotulo, sql, database, f'Query {nome} em {fmt} (08_athena_benchmark.py)')
+        r = bench_athena(athena, sql, database, runs, rotulo)
     except AthenaError as erro:
         sys.exit(f'[cloud_benchmark] ERRO no Athena ({nome}, {fmt}): {erro}')
     print(f"  athena  {nome:30} {fmt:13} {r['median_s'] * 1000:9.1f} ms  {r['n_rows']:>8,} linhas"

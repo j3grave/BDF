@@ -159,6 +159,7 @@ class Athena:
         self.workgroup = aws['workgroup']
         # Os resultados de cada query ficam num CSV (e um .metadata) nesta pasta do bucket de resultados
         self.output = f"s3://{aws['bucket_resultados']}/athena-results/{aws['database']}/"
+        self.guardadas = None   # nome -> id das queries em "Saved queries" (lido na primeira vez)
 
     def _call(self, funcao, **kwargs):
         """Chama a API e traduz os erros de credenciais numa mensagem clara."""
@@ -169,13 +170,19 @@ class Athena:
                 raise SystemExit(MENSAGEM_CREDENCIAIS) from erro
             raise
 
-    def run(self, sql, database=None):
+    def run(self, sql, database=None, nome=None):
         """Corre uma query e devolve {id, engine_s, total_s, scanned_bytes, output}.
+
+        Com nome, o SQL começa por um comentário com esse nome, para a query se reconhecer no
+        histórico do Athena (que só mostra o id da execução e o texto). Só para SELECT: alguns
+        comandos de DDL não aceitam comentários no início.
 
         engine_s: tempo de execução no motor; total_s: inclui fila e planeamento.
         A reutilização de resultados do Athena (result reuse) só acontece se for pedida
         em cada query; aqui não é, por isso cada corrida lê mesmo os dados.
         """
+        if nome:
+            sql = f'-- {nome}\n{sql}'
         kwargs = {'QueryString': sql, 'WorkGroup': self.workgroup,
                   'ResultConfiguration': {'OutputLocation': self.output}}
         if database:
@@ -207,6 +214,39 @@ class Athena:
             'scanned_bytes': stats.get('DataScannedInBytes', 0),
             'output': execucao.get('ResultConfiguration', {}).get('OutputLocation', ''),
         }
+
+    def guardar(self, nome, sql, database, descricao=''):
+        """Guarda a query em "Saved queries" do Athena com este nome; se já existir, atualiza-a.
+
+        Se a conta não deixar guardar queries, avisa uma vez e continua: guardar não é preciso
+        para o resto do pipeline.
+        """
+        if self.guardadas is False:
+            return
+        try:
+            if self.guardadas is None:
+                # Primeira vez: lê os nomes das queries já guardadas neste workgroup
+                self.guardadas = {}
+                ids = []
+                for pagina in self.athena.get_paginator('list_named_queries').paginate(WorkGroup=self.workgroup):
+                    ids += pagina['NamedQueryIds']
+                for i in range(0, len(ids), 50):   # a API aceita no máximo 50 ids por pedido
+                    resposta = self._call(self.athena.batch_get_named_query, NamedQueryIds=ids[i:i + 50])
+                    for query in resposta['NamedQueries']:
+                        self.guardadas[query['Name']] = query['NamedQueryId']
+            if nome in self.guardadas:
+                self._call(self.athena.update_named_query, NamedQueryId=self.guardadas[nome], Name=nome,
+                           Description=descricao, QueryString=sql)
+            else:
+                resposta = self._call(self.athena.create_named_query, Name=nome, Description=descricao,
+                                      Database=database, QueryString=sql, WorkGroup=self.workgroup)
+                self.guardadas[nome] = resposta['NamedQueryId']
+        except SystemExit:
+            raise   # credenciais: o erro já vem explicado
+        except Exception as erro:
+            print(f'  AVISO: não foi possível guardar as queries em "Saved queries" ({type(erro).__name__}: '
+                  f'{erro}); o pipeline continua sem as guardar.')
+            self.guardadas = False
 
     def rows(self, query_id):
         """Linhas do resultado (sem o cabeçalho), como tuplos de texto. Só para resultados pequenos."""

@@ -110,8 +110,14 @@ def gravar_credenciais(texto):
     """Grava o bloco [default] copiado do Learner Lab no ficheiro de credenciais. Nunca mostra as chaves."""
     if texto is None:
         print('Neste sistema não consigo ler o que foi copiado: atualiza o ficheiro noutro terminal.')
-        return
-    linhas = [linha.strip() for linha in texto.strip().splitlines() if linha.strip()]
+        return False
+    # As chaves AWS só têm caracteres ASCII visíveis: tira espaços e caracteres invisíveis que o
+    # browser às vezes junta ao copiar (espaço não separável, espaço de largura zero, ...)
+    linhas = []
+    for linha in texto.splitlines():
+        limpa = ''.join(c for c in linha if 32 < ord(c) < 127)
+        if limpa:
+            linhas.append(limpa)
     chaves = ('aws_access_key_id', 'aws_secret_access_key', 'aws_session_token')
     em_falta = []
     for chave in chaves:
@@ -119,14 +125,44 @@ def gravar_credenciais(texto):
             em_falta.append(chave)
     if not linhas or linhas[0] != '[default]' or em_falta:
         # Não gravar outra coisa por cima das credenciais (ex.: se entretanto se copiou outro texto)
-        print('O texto copiado não é o bloco [default] do Learner Lab (com aws_access_key_id, '
+        print('Nada gravado: o que está copiado não é o bloco [default] do Learner Lab (com aws_access_key_id,\n'
               'aws_secret_access_key e aws_session_token). Copia-o de novo em "AWS Details" > "AWS CLI: Show".')
-        return
+        return False
     caminho = ficheiro_credenciais()
     caminho.parent.mkdir(parents=True, exist_ok=True)
     caminho.write_text('\n'.join(linhas) + '\n')
     caminho.chmod(0o600)   # só o próprio utilizador lê o ficheiro, como faz a AWS CLI
     print(f'Bloco [default] gravado em {caminho}.')
+    return True
+
+
+def diagnostico_credenciais(region, erro):
+    """Mostra porque é que as credenciais falharam, sem nunca mostrar as chaves."""
+    from athena_common import boto3_session
+    causa = erro.__cause__
+    resposta = getattr(causa, 'response', None) or {}
+    codigo = resposta.get('Error', {}).get('Code') or (type(causa).__name__ if causa else 'desconhecido')
+    mensagem = resposta.get('Error', {}).get('Message', '')
+    print(f'  Resposta da AWS: {codigo}' + (f' ({mensagem})' if mensagem else ''))
+    # Variáveis de ambiente e perfis têm prioridade sobre o ficheiro de credenciais
+    variaveis = [v for v in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_PROFILE',
+                             'AWS_SHARED_CREDENTIALS_FILE', 'AWS_CONFIG_FILE') if v in os.environ]
+    print(f"  Variáveis AWS_* no ambiente: {', '.join(variaveis) if variaveis else 'nenhuma'}")
+    credenciais = boto3_session(region).get_credentials()
+    print(f"  O boto3 está a ler as credenciais de: {credenciais.method if credenciais else 'nenhum sítio'}")
+    caminho = ficheiro_credenciais()
+    if caminho.exists():
+        linhas = caminho.read_text(errors='replace').splitlines()
+        chaves = [c for c in ('aws_access_key_id', 'aws_secret_access_key', 'aws_session_token')
+                  if any(linha.strip().startswith(c) for linha in linhas)]
+        estranhos = any(not (32 <= ord(c) < 127) for linha in linhas for c in linha)
+        alterado = time.strftime('%d/%m/%Y %H:%M', time.localtime(caminho.stat().st_mtime))
+        print(f'  {caminho}: alterado a {alterado}, {len(linhas)} linhas, '
+              f"primeira linha {linhas[0].strip() if linhas else '(vazio)'}, chaves: {', '.join(chaves) or 'nenhuma'}, "
+              f"caracteres invisíveis: {'sim' if estranhos else 'não'}")
+    else:
+        print(f'  {caminho} não existe.')
+    print(f"  Hora desta máquina (UTC): {time.strftime('%d/%m/%Y %H:%M', time.gmtime())}")
 
 
 def confirmar_credenciais(region):
@@ -137,20 +173,17 @@ def confirmar_credenciais(region):
             account_id(boto3_session(region))
             print('Credenciais AWS válidas.\n')
             return
-        except SystemExit:
+        except SystemExit as erro:
             print('As credenciais AWS não existem, expiraram ou são inválidas. No Learner Lab: "Start Lab",\n'
-                  'esperar pelo indicador verde e, em "AWS Details" > "AWS CLI: Show", copiar o bloco [default].')
-        caminho = ficheiro_credenciais()
-        if caminho.exists():
-            alterado = time.strftime('%d/%m/%Y %H:%M', time.localtime(caminho.stat().st_mtime))
-            print(f'\n{caminho} foi alterado pela última vez a {alterado}.')
-        else:
-            print(f'\n{caminho} não existe.')
-        # Este terminal está à espera da resposta, por isso aqui não se podem correr comandos (ex.: pbpaste)
-        print('Depois de o copiares, escreve c aqui, ou atualiza o ficheiro noutro terminal e carrega Enter.')
-        resposta = input('c + Enter: gravar o bloco copiado · Enter: confirmar de novo · Ctrl+C: sair > ')
-        if resposta.strip().lower() == 'c':
-            gravar_credenciais(ler_clipboard())
+                  'esperar pelo indicador verde e, em "AWS Details" > "AWS CLI: Show", copiar o bloco [default].\n')
+            diagnostico_credenciais(region, erro)
+        except Exception as erro:
+            # Ex.: sem rede ou um proxy a bloquear o acesso à AWS (não é um problema das credenciais)
+            print(f'Não consegui contactar a AWS para confirmar as credenciais: {type(erro).__name__}: {erro}')
+        # Este terminal está à espera da resposta: um pbpaste escrito aqui não corre. Por isso, a cada
+        # Enter, o pipeline lê ele próprio o que foi copiado e grava-o, se for o bloco [default].
+        input('\nCopia o bloco [default] do Learner Lab e carrega Enter aqui (Ctrl+C para sair) > ')
+        gravar_credenciais(ler_clipboard())
 
 
 def perguntar():
