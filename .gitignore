@@ -13,8 +13,6 @@ data/
 results_local/
 
 # Ambiente Python
-.venv/
-venv/
 __pycache__/
 .ipynb_checkpoints/
 
