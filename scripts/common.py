@@ -2,9 +2,11 @@
 common.py - Configuração e funções partilhadas pelos scripts do pipeline.
 
 Objetivo:
-    Reunir num só sítio o que todos os passos usam: a lista de datasets, o esquema
-    das tabelas, a leitura do config.yaml, os caminhos das pastas e a escrita dos
-    CSV de resultados. Assim, cada script só tem a lógica do seu próprio passo.
+    Reunir num só sítio o que todos os passos usam: 
+     (1) Lista de datasets;
+     (2) Esquema das tabelas;
+     (3) Leitura do config.yaml
+     (4) Caminhos das pastas e a escrita dos CSV de resultados. Assim, cada script só tem a lógica do seu próprio passo.
 
 Entradas:
     config.yaml (na raiz do projeto).
@@ -12,8 +14,6 @@ Entradas:
 Saídas:
     Nenhuma diretamente; é importado pelos outros scripts com `from common import ...`.
 
-Como correr:
-    Não se corre sozinho. Os scripts de scripts/ e o run_pipeline.py importam-no.
 """
 import argparse
 import csv
@@ -23,12 +23,10 @@ from pathlib import Path
 
 import yaml
 
-# Raiz do projeto: a pasta acima de scripts/. Todos os caminhos partem daqui,
-# por isso os scripts funcionam seja qual for a pasta onde são chamados.
+# Raiz do projeto - pasta acima de scripts/. Todos os caminhos partem daqui, por isso os scripts funcionam seja qual for a pasta onde são chamados.
 ROOT = Path(__file__).resolve().parent.parent
 
-# Os três tamanhos do MovieLens: de onde se descarregam, o nome da pasta dentro
-# do zip e o formato dos ficheiros (o 1M é o único que vem em .dat).
+# Os três tamanhos do MovieLens - de onde se descarregam, o nome da pasta dentro do zip e o formato dos ficheiros (o 1M é o único que vem em .dat).
 DATASETS = {
     'small': {'url': 'https://files.grouplens.org/datasets/movielens/ml-latest-small.zip',
               'folder': 'ml-latest-small', 'format': 'csv'},
@@ -38,9 +36,8 @@ DATASETS = {
               'folder': 'ml-32m', 'format': 'csv'},
 }
 
-# Esquema comum aos três datasets: nome e tipo de cada coluna.
-# Fixar os tipos (em vez de deixar o DuckDB adivinhá-los) garante que o Parquet
-# do small, do 1M e do 32M tem exatamente as mesmas colunas e tipos.
+# Esquema comum aos três datasets - nome e tipo de cada coluna;
+# Fixar os tipos (em vez de deixar o DuckDB adivinhá-los) garante que o Parquet do small, do 1M e do 32M tem exatamente as mesmas colunas e tipos.
 SCHEMAS = {
     'ratings': {'userId': 'INTEGER', 'movieId': 'INTEGER', 'rating': 'DOUBLE', 'timestamp': 'BIGINT'},
     'movies':  {'movieId': 'INTEGER', 'title': 'VARCHAR', 'genres': 'VARCHAR'},
@@ -69,7 +66,7 @@ def load_config(dataset=None):
         'csv': base / 'csv',            # CSV normalizados (esquema comum)
         'parquet': base / 'parquet',
         # O run_pipeline.py muda a pasta dos resultados com a variável BDF_RESULTS_DIR
-        # (results_local/, fora do git), para correr sem deixar alterações para commit
+        # (results_local/, fora do git), para correr sem deixar alterações para commit - caso contrário cada vez que corremos temos de fazer commit por causa dos resultados e cria diversas versões
         'results': ROOT / os.environ.get('BDF_RESULTS_DIR', cfg['results_dir']),
     }
     cfg['source'] = DATASETS[ds]
@@ -98,7 +95,7 @@ def size_on_disk(path):
     if path.is_file():
         return path.stat().st_size
 
-    # Uma pasta (ex.: o Parquet particionado) pode ter subpastas: percorre-as todas
+    # Uma pasta (ex.: o Parquet particionado) pode ter subpastas - percorre-as todas
     total = 0
     for f in path.rglob('*'):
         if f.is_file():

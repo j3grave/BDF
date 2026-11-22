@@ -2,13 +2,11 @@
 08_athena_benchmark.py - Bloco cloud, passo 4 de 4: benchmark DuckDB (local) vs Athena (S3) sobre os mesmos ficheiros.
 
 Objetivo:
-    Correr as mesmas perguntas nos dois motores e sobre os mesmos bytes: o DuckDB lê
-    data/cloud/<pasta>/ no disco local e o Athena lê a cópia exata dessa pasta no S3.
-    Cada query que usa ratings corre em três formatos (CSV, Parquet e Parquet particionado
-    por ano); as que só usam movies correm uma vez, em Parquet.
-    Cada combinação corre 3 vezes e guarda-se a mediana do tempo. No Athena regista-se
-    também o tempo no motor e os dados lidos (DataScannedInBytes, aquilo que é cobrado),
-    que é a métrica que melhor mostra o efeito do formato colunar e das partições.
+    Correr as mesmas perguntas nos dois motores e sobre os mesmos bytes: 
+    (1) o DuckDB lê data/cloud/<pasta>/ no disco local e o Athena lê a cópia exata dessa pasta no S3;
+    (2) Cada query que usa ratings corre em três formatos (CSV, Parquet e Parquet particionado por ano - as que só usam movies correm uma vez, em Parquet);
+    (3) Cada combinação corre 3 vezes- pode correr mais vezes se for defiido no inicio deste notebook -  e guarda-se a mediana do tempo; 
+    (4) No Athena regista-se também o tempo no motor e os dados lidos (DataScannedInBytes, aquilo que é cobrado),que é a métrica que melhor mostra o efeito do formato colunar e das partições.
 
 Entradas:
     sql/athena/queries/*.sql        queries no dialeto do Athena (Trino)
@@ -24,20 +22,11 @@ Saídas:
     n.º de linhas no DuckDB e no Athena. Se alguma diferir (ou o Athena falhar a meio),
     essa corrida não fica no CSV e o script termina com erro.
 
-Como correr:
-    python scripts/08_athena_benchmark.py --engines duckdb             só a parte local, sem AWS
-    python scripts/08_athena_benchmark.py --dry-run                    mostra o SQL do Athena, sem AWS
-    python scripts/08_athena_benchmark.py --dataset small
-    python scripts/08_athena_benchmark.py --bucket-dados X --bucket-resultados Y
-    (por omissão: dataset do config.yaml, os dois motores e 3 corridas; os buckets, se não
-    forem indicados nem estiverem no config.yaml, são derivados do ID da conta)
-
-Notas:
-    O tempo do Athena é o TotalExecutionTimeInMillis (inclui fila e planeamento) e o
-    tempo no motor é o EngineExecutionTimeInMillis. O tempo do DuckDB é medido no relógio
-    local, com uma ligação nova em cada corrida, como no 03_benchmark.py.
-    A query 03 usa approx_percentile no Athena (não tem MEDIAN exata), por isso a mediana
-    pode diferir ligeiramente; o n.º de linhas tem de ser igual nos dois motores.
+Algumas Notas a COnsiderar:
+    (1) O tempo do Athena é o TotalExecutionTimeInMillis (inclui fila e planeamento) e o
+    tempo no motor é o EngineExecutionTimeInMillis. 
+    (2) O tempo do DuckDB é medido no relógio local, com uma ligação nova em cada corrida, como no 03_benchmark.py.
+    (3) A query 03 usa approx_percentile no Athena (não tem MEDIAN exata), por isso a mediana pode diferir ligeiramente; o n.º de linhas tem de ser igual nos dois motores.
 """
 import argparse
 import statistics
@@ -51,13 +40,11 @@ from athena_common import (ATHENA_SQL, USD_POR_TB, Athena, AthenaError, add_aws_
                            resolve_buckets)
 from common import DATASETS, ROOT, SCHEMAS, append_row, duckdb_columns, load_config, now
 
-RUNS = 3
+RUNS = 3 # número de corridas por query e formato (DuckDB e Athena), alterar se queremos mais corridas
 MINIMO_COBRADO = 10e6   # o Athena cobra pelo menos 10 MB por query
 FORMATOS_RATINGS = ['csv', 'parquet', 'parquet_part']
 
-# No Athena, ${ratings} e ${movies} passam a nomes de tabelas. Nas tabelas sem partição,
-# year é calculado a partir do timestamp, para as três versões terem as mesmas colunas
-# (o mesmo truque do 03_benchmark.py). from_unixtime devolve a data em UTC.
+# No Athena, ${ratings} e ${movies} passam a nomes de tabelas. Nas tabelas sem partição, year é calculado a partir do timestamp, para as três versões terem as mesmas colunas(o mesmo truque do 03_benchmark.py). from_unixtime devolve a data em UTC.
 ATHENA_SOURCES = {
     'csv': {'ratings': '(SELECT x.*, year(from_unixtime(x."timestamp")) AS year FROM ratings_csv AS x)',
             'movies': 'movies'},

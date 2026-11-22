@@ -4,11 +4,21 @@
 Objetivo:
     Correr o DDL de sql/athena/ddl/ para registar no Glue Data Catalog a base de dados
     movielens_<dataset> e uma tabela por pasta de data/cloud/<pasta>/ (já enviada para o S3).
-    Usamos DDL escrito à mão em vez de um crawler do Glue para controlar os tipos: ficam
-    exatamente os do manifesto. Antes de enviar o DDL, o script confirma, sem AWS, que as
+    Usamos DDL escrito à mão em vez de um crawler do Glue para controlar os tipos ( ficam
+    exatamente os do manifesto). Antes de enviar o DDL, o script confirma, sem AWS, que as
     colunas e os tipos de cada CREATE TABLE coincidem com os ficheiros locais. Depois de
     criar as tabelas, confirma no Athena que o n.º de linhas de cada tabela (e de cada
     ano de ratings_part) é igual ao dos ficheiros locais.
+
+Porquê usar o DDL - Data Definition Language - em vês de um crawler do Glue:
+    (1) Controlo do esquema - O crawler adivinha o esquema a partir dos ficheiros, com o MovieLens costuma correr mal. Os títulos em movies.csv têm vírgulas dentro de aspas (por exemplo "American President, The (1995)"), e um crawler sobre CSV tende a partir essas linhas;
+    (2)pode inferir timestamp como bigint ou string, ou os IDs com tipos diferentes entre tabelas;
+    (3)com DDL permite decidir o tipo de cada coluna, o SerDe (OpenCSVSerDe) e o skip.header.line.count;
+    (4) Reprodutibilidade - o DDL fica guardado em ficheiros .sql no Git, e o passo cloud corre com um só comando e cria sempre as mesmas tabelas.
+    (5) Benchmark - Para comparar os 877 MB em CSV, 94 MB em Parquet e 4,7 MB em Parquet particionado, as três tabelas têm de ter exatamente as mesmas colunas e tipos. Só assim a diferença se deve ao formato e não ao esquema. No caso particionado, o DDL com PARTITIONED BY (seguido de MSCK REPAIR TABLE ou partition projection) também garante que as 29 partições são reconhecidas como queres;
+    (6) Custo e tempo - No Athena, as instruções DDL não são cobradas e correm em segundos. O crawler cobra por DPU-hora, com um mínimo faturado por execução, demora um ou dois minutos a correr e precisa de uma IAM role. No Learner Lab, as permissões de IAM são limitadas (fonte claude)
+
+Nota: Faz sentido usar o crawler, quando se desconhece os dados ou o esquema muda com frequência, por exemplo pastas novas ou colunas acrescentadas. No nosso projeto o esquema é conhecido e estável, por isso o DDL escrito à mão dá mais controlo, sai mais barato e é reprodutível. 
 
 Entradas:
     sql/athena/ddl/*.sql                 DDL com os marcadores ${database}, ${bucket} e ${pasta}

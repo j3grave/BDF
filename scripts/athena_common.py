@@ -2,12 +2,13 @@
 athena_common.py - Configuração e funções partilhadas pelos scripts do bloco cloud.
 
 Objetivo:
-    Reunir num só sítio o que o 07_athena_setup.py e o 08_athena_benchmark.py usam: as opções
-    da linha de comandos da AWS (região, buckets), a leitura dos .sql de sql/athena/ e
-    uma pequena classe que submete uma query ao Athena, espera que termine e devolve as
-    estatísticas (tempo e bytes lidos). Também resolve os nomes dos buckets: se não vierem
-    da linha de comandos nem do config.yaml, são derivados do ID da conta AWS, para cada
-    aluno ter os seus sem configurar nada.
+    (1) Reunir num só sítio o que o 07_athena_setup.py e o 08_athena_benchmark.py usam: 
+    (1.1) opções da linha de comandos da AWS (região, buckets);
+    (1.2) leitura dos .sql de sql/athena/
+    (1.3) funções DuckDB para inspecionar os ficheiros Parquet (schema, contagem de linhas, compressão, contagem por ano);
+    (1.4) uma pequena classe que submete uma query ao Athena, espera que termine e devolve as
+    estatísticas (tempo e bytes lidos). 
+    (2) Também resolve os nomes dos buckets, são derivados do ID da conta AWS.
 
 Entradas:
     config.yaml (secção aws) e as opções --region, --bucket-dados, --bucket-resultados, --workgroup.
@@ -17,8 +18,6 @@ Entradas:
 Saídas:
     Nenhuma diretamente; é importado pelos outros scripts.
 
-Como correr:
-    Não se corre sozinho.
 """
 import csv
 import io
@@ -40,9 +39,8 @@ USD_POR_TB = 5.0        # preço do Athena por TB lido (us-east-1), para estimar
 ERROS_CREDENCIAIS = {'ExpiredTokenException', 'ExpiredToken', 'UnrecognizedClientException',
                      'InvalidClientTokenId', 'InvalidAccessKeyId', 'SignatureDoesNotMatch'}
 
-# Nomes dos buckets quando não vêm da linha de comandos nem do config.yaml (null).
-# O sufixo é o ID da conta (12 dígitos): os nomes de buckets são únicos em toda a AWS,
-# por isso cada aluno precisa dos seus. O ID só aparece no ecrã, nunca nos ficheiros do repositório.
+# Nomes dos buckets quando não vêm da linha de comandos nem do config.yaml (null);
+# O sufixo é o ID da conta (12 dígitos): os nomes de buckets são únicos em toda a AWS, por isso cada um precisa dos seus. O ID só aparece no ecrã, nunca nos ficheiros do repositório.
 PREFIXO_BUCKETS = {'bucket_dados': 'bdf26-g1-dados', 'bucket_resultados': 'bdf26-g1-resultados'}
 
 if platform.system() == 'Darwin':
@@ -103,8 +101,7 @@ def boto3_session(region):
     try:
         import boto3
     except ImportError:
-        # Quase sempre é o Python errado (por exemplo, o do conda em vez do .venv do projeto),
-        # por isso a mensagem mostra qual é o Python em uso
+        # Quase sempre é o Python errado (por exemplo, o do conda em vez do .venv do projeto), por isso a mensagem mostra qual é o Python em uso
         ativar = r'.venv\Scripts\activate' if platform.system() == 'Windows' else 'source .venv/bin/activate'
         raise SystemExit(
             f'Erro: falta o boto3 neste Python ({sys.executable}).\n'
@@ -225,7 +222,7 @@ class Athena:
             return
         try:
             if self.guardadas is None:
-                # Primeira vez: lê os nomes das queries já guardadas neste workgroup
+                # Primeira vez - ê os nomes das queries já guardadas neste workgroup
                 self.guardadas = {}
                 ids = []
                 for pagina in self.athena.get_paginator('list_named_queries').paginate(WorkGroup=self.workgroup):
@@ -242,7 +239,7 @@ class Athena:
                                       Database=database, QueryString=sql, WorkGroup=self.workgroup)
                 self.guardadas[nome] = resposta['NamedQueryId']
         except SystemExit:
-            raise   # credenciais: o erro já vem explicado
+            raise   # credenciais - erro já vem explicado
         except Exception as erro:
             print(f'  AVISO: não foi possível guardar as queries em "Saved queries" ({type(erro).__name__}: '
                   f'{erro}); o pipeline continua sem as guardar.')
@@ -273,7 +270,7 @@ class Athena:
         return len(linhas) - 1   # sem o cabeçalho
 
 
-# Funções DuckDB usadas pelo 05_prepare_cloud.py e pelo 07_athena_setup.py
+# Funções DuckDB usadas pelo 05_prepare_cloud.py e pelo 07_athena_setup.py;
 # Mapeamento dos tipos do DuckDB para os tipos do DDL do Athena (Hive)
 ATHENA_TYPES = {'INTEGER': 'int', 'BIGINT': 'bigint', 'DOUBLE': 'double', 'VARCHAR': 'string'}
 

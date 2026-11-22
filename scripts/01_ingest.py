@@ -4,23 +4,22 @@
 Objetivo:
     Descarregar o dataset escolhido do site do GroupLens e deixar as tabelas todas
     no mesmo formato (CSV com cabeçalho, UTF-8, mesmas colunas), seja qual for o
-    tamanho do dataset. Os passos seguintes podem então tratar os três da mesma forma.
+    tamanho do dataset. 
+    
+    Os passos seguintes podem então tratar os três da mesma forma.
     - small e 32m já vêm em CSV com este esquema: os ficheiros são só extraídos.
-    - 1m vem em .dat (separador '::', sem cabeçalho, movies.dat em latin-1):
-      é convertido para CSV com o DuckDB.
+    - 1m vem em .dat (separador '::', sem cabeçalho, movies.dat em latin-1), conversão para CSV com o DuckDB.
 
-Entradas:
-    O zip do GroupLens (descarregado só se ainda não existir em data/<dataset>/raw/).
+Caminho da ingestão
+    
+1.Entradas:
+Zip do GroupLens (descarregado só se ainda não existir em data/<dataset>/raw/).
 
-Saídas:
+2. Saídas:
     data/<dataset>/raw/                     zip e ficheiros originais
     data/<dataset>/csv/ratings.csv          userId, movieId, rating, timestamp
     data/<dataset>/csv/movies.csv           movieId, title, genres
     data/<dataset>/csv/tags.csv, links.csv  quando o dataset os tiver (small e 32m)
-
-Como correr:
-    python scripts/01_ingest.py --dataset small
-    (ou, para todos os passos: python run_pipeline.py --dataset small)
 """
 
 import shutil
@@ -32,7 +31,7 @@ import duckdb
 
 from common import SCHEMAS, duckdb_columns, load_config, parse_args
 
-# Codificação de cada ficheiro .dat do 1M: o movies.dat tem títulos com acentos em latin-1
+# Codificação de cada ficheiro .dat do 1M - movies.dat tem títulos com acentos em latin-1
 DAT_ENCODING = {"ratings": "utf-8", "movies": "latin-1"}
 
 
@@ -43,7 +42,7 @@ def download(url, dest):
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    # Escreve primeiro num ficheiro .part e só no fim lhe dá o nome final.
+    # Escreve primeiro num ficheiro .part, no fim dá o nome final
     # Se o download for interrompido, fica só o .part e a próxima execução volta a descarregar.
     tmp = dest.with_suffix(dest.suffix + ".part")
     print(f"  a descarregar {url}")
@@ -69,7 +68,7 @@ def extract(zip_path, raw_dir, folder):
 
 def normalize_csv(src, csv_dir):
     """small e 32m: os CSV já têm o esquema certo, basta passá-los para a pasta csv/."""
-    # Move em vez de copiar: no 32m o ratings.csv tem ~0.9 GB e uma cópia duplicaria o espaço
+    # Move em vez de copiar - natenção no 32m o ratings.csv tem 0.9 GB e uma cópia duplicaria o espaço
     for table in SCHEMAS:
         f = src / f"{table}.csv"
         if f.exists():
@@ -83,11 +82,11 @@ def normalize_dat(src, csv_dir):
         csv_file = (csv_dir / f"{table}.csv").as_posix()
         columns = duckdb_columns(SCHEMAS[table])
 
-        # O DuckDB lê e escreve em streaming, sem passar pelo pandas.
-        # - delim='::'             separador do formato .dat
-        # - header=false + columns  o ficheiro não tem cabeçalho, por isso damos os nomes e tipos
-        # - quote='' e escape=''    os títulos podem ter aspas, que aqui não delimitam campos
-        # - encoding                latin-1 no movies.dat, para os acentos saírem corretos
+        # O DuckDB lê e escreve em streaming, sem passar pelo pandas
+        # - delim='::', separador do formato .dat
+        # - header=false + columns - o ficheiro não tem cabeçalho, por isso damos os nomes e tipos
+        # - quote='' e escape='' - os títulos podem ter aspas, que aqui não delimitam campos
+        # - encoding - latin-1 no movies.dat, para os acentos saírem corretos
         duckdb.execute(f"""
             COPY (SELECT * FROM read_csv('{dat_file}',
                                          delim='::', header=false, quote='', escape='',
@@ -104,7 +103,7 @@ def main():
     source = cfg["source"]
     print(f"[ingest] dataset={cfg['dataset']}")
 
-    # 1. Obter os ficheiros originais (cada fase é saltada se já tiver sido feita)
+    # 1. Obter os ficheiros originais (cada fase é saltada se já tiver sido feita, quem já tiver feito já não volta a fazer))
     zip_path = paths["raw"] / f"{source['folder']}.zip"
     download(source["url"], zip_path)
     src = extract(zip_path, paths["raw"], source["folder"])
@@ -117,7 +116,7 @@ def main():
     else:
         normalize_csv(src, csv_dir)
 
-    # 3. Verificação rápida: n.º de linhas de cada CSV (comparar com os valores oficiais do GroupLens)
+    # 3. Verificação rápida: n.º de linhas de cada CSV (comparar com os valores oficiais do GroupLens, permite confirmar se tudo está ok)
     for f in sorted(csv_dir.glob("*.csv")):
         n = duckdb.execute(
             f"SELECT COUNT(*) FROM read_csv('{f.as_posix()}')"

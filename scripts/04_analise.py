@@ -3,16 +3,15 @@
 
 Objetivo:
     Responder à pergunta "o que nos dizem os dados", em três partes:
-      1. Análise exploratória (EDA): indicadores, qualidade das tabelas e 10 figuras sobre a
-         distribuição das notas, a atividade dos utilizadores, a popularidade dos filmes, o
+      1. Análise exploratória (EDA): 
+        (1.1) indicadores;
+        (1.2) qualidade das tabelas
+        (1.3) 10 figuras sobre a distribuição das notas, a atividade dos utilizadores, a popularidade dos filmes, o
          tempo, os géneros e as tags.
-      2. Análises de sql/analise/: 16 queries (qualidade, integridade, evolução no tempo,
-         filmes, uso da escala e deteção de utilizadores suspeitos), com verificações.
-      3. Coordenação entre contas (só com --coordenacao): procura grupos de contas que dão a
-         mesma nota extrema ao mesmo filme na mesma hora e compara-os com uma linha de base
-         em que os timestamps são baralhados dentro de cada filme.
-    Todas as agregações são feitas no DuckDB e só os resultados agregados passam para Python,
-    por isso o mesmo script corre no small, no 1M e no 32M sem carregar os dados em memória.
+      2. Análises de sql/analise/ - 16 queries (qualidade, integridade, evolução no tempo, filmes, uso da escala e deteção de utilizadores suspeitos), com verificações.
+      3. Coordenação entre contas (identificação de bots ou atividades suspetas na nos ratings): 
+        (3.1) procura grupos de contas que dão a mesma nota extrema ao mesmo filme na mesma hora e compara-os com uma linha de base em que os timestamps são baralhados dentro de cada filme.
+      4. Todas as agregações são feitas no DuckDB e só os resultados agregados passam para Python, por isso o mesmo script corre no small, no 1M e no 32M sem carregar os dados em memória.
 
     Verificações que fazem o script falhar (parte 2):
     - qualidade: 0 linhas com nulos e 0 valores fora da escala (no 1M, também só inteiros 1-5);
@@ -44,25 +43,11 @@ Saídas:
         top10_rajadas.csv, top10_contas.csv, verificacao_permutacao.csv
         coordenacao_relatorio.md
 
-Como correr:
-    python scripts/04_analise.py --dataset small
-    python scripts/04_analise.py --dataset small --emular-athena
-    python scripts/04_analise.py --dataset 1m --coordenacao
-    python scripts/04_analise.py --dataset 32m --coordenacao --repeticoes 200 --memoria 12GB
-    (ou, dentro do pipeline: python run_pipeline.py --dataset small --steps analise)
-
 Notas:
-    - As ligações ao DuckDB ficam em UTC; os anos, as horas e os dias vêm de epoch_ms (sem
-      fuso), por isso nenhum resultado depende da máquina.
-    - ${flag_bots} é a tabela por utilizador de 10_flag_bots.sql. O script corre essa query
-      primeiro e guarda-a numa tabela temporária; no Athena é um CTAS em Parquet.
-    - A emulação do Athena valida a lógica e os resultados das versões Athena (com divisão
-      inteira entre inteiros, como no Trino, e macros para from_unixtime, date_format,
-      sequence e approx_percentile). Não valida a sintaxe do Trino: isso só na AWS.
-    - Coordenação: a permutação ordena as avaliações de cada filme por
-      hash(userId, movieId, semente), com uma semente por repetição (1..R), e dá-lhes os
-      timestamps desse filme por ordem. É reprodutível com várias threads. Usa memory_limit
-      (--memoria) e uma pasta temporária em data/<dataset>/duckdb_tmp/, apagada no fim.
+    - As ligações ao DuckDB ficam em UTC; os anos, as horas e os dias vêm de epoch_ms (sem fuso), por isso nenhum resultado depende da máquina;
+    - ${flag_bots} é a tabela por utilizador de 10_flag_bots.sql. O script corre essa query primeiro e guarda-a numa tabela temporária; no Athena é um CTAS em Parquet;
+    - A emulação do Athena valida a lógica e os resultados das versões Athena (com divisão inteira entre inteiros, como no Trino, e macros para from_unixtime, date_format, sequence e approx_percentile). Não valida a sintaxe do Trino: isso só na AWS;
+    - Coordenação: a permutação ordena as avaliações de cada filme por hash(userId, movieId, semente), com uma semente por repetição (1..R), e dá-lhes os timestamps desse filme por ordem. É reprodutível com várias threads. Usa memory_limit (--memoria) e uma pasta temporária em data/<dataset>/duckdb_tmp/, apagada no fim.
 """
 import argparse
 import math
@@ -92,24 +77,22 @@ from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config  # noqa:
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# Identidade visual NOVA IMS
-# Cores retiradas dos slides oficiais da cadeira (template NOVA IMS).
-# Para ajustar a paleta, basta alterar este bloco.
+# PARTE 1.1 Identidade visual NOVA IMS - Slides utilizados noutros projetos de grupo
 # ---------------------------------------------------------------------------
 NOVA = {
-    "verde": "#BED62F",         # verde-lima NOVA IMS (destaque principal)
+    "verde": "#BED62F",         # verde-lima (destaque principal)
     "verde_escuro": "#8A9C1F",  # verde para linhas e texto sobre branco
     "verde_claro": "#E4EEA6",   # fundos e áreas
-    "cinza": "#5B6062",         # cinzento dos cabeçalhos NOVA IMS
+    "cinza": "#5B6062",         # cinzento dos cabeçalhos 
     "cinza_escuro": "#2E3133",  # texto principal
     "cinza_medio": "#9EA3A5",   # elementos secundários
     "cinza_claro": "#E3E5E6",   # grelhas e fundos
     "branco": "#FFFFFF",
 }
-# Ordem das cores quando um gráfico tem várias séries
+# Ordem das cores quando um gráfico tem várias séries - bloco de código usado noutro projeto com EDA
 PALETA_CATEGORICA = [NOVA["verde"], NOVA["cinza"], NOVA["verde_escuro"],
                      NOVA["cinza_medio"], NOVA["verde_claro"], NOVA["cinza_escuro"]]
-# Escala de cor contínua (branco -> verde escuro) para o heatmap
+# Escala de cor contínua (branco  a verde escuro) para o heatmap
 CMAP_NOVA = LinearSegmentedColormap.from_list(
     "nova", [NOVA["branco"], NOVA["verde_claro"], NOVA["verde"], NOVA["verde_escuro"]])
 
@@ -152,8 +135,8 @@ def rodape(fig, dataset):
 
 def fmt_milhares(x, _pos=None):
     """Formata valores dos eixos em português abreviado: 1,5 M, 25 mil, 300."""
-    # O matplotlib chama esta função para cada marca do eixo com (valor, posição);
-    # a posição não é usada, mas o parâmetro _pos tem de existir.
+    # NOTA 1:O matplotlib chama esta função para cada marca do eixo com (valor, posição);
+    # NOTa 2: a posição não é usada, mas o parâmetro _pos tem de existir.
     if abs(x) >= 1e6:
         return f"{x/1e6:.1f} M".replace(".", ",")
     if abs(x) >= 1e3:
@@ -169,7 +152,7 @@ def num(x, casas=0):
 
 
 # ---------------------------------------------------------------------------
-# Ligação aos dados
+# PARTE 1.2 Ligação aos dados
 # ---------------------------------------------------------------------------
 TABELAS = ["ratings", "movies", "tags", "links"]
 
@@ -186,8 +169,7 @@ def localizar(base, dataset, tabela, fonte):
     candidatos = []
     if fonte in ("auto", "parquet"):
         candidatos.append((pasta_pq / f"{tabela}.parquet", "parquet"))
-        # Alternativa para nomes diferentes (ex.: ratings_v2.parquet). Só ficheiros:
-        # a pasta ratings_by_year/ (Parquet particionado) não é considerada.
+        # Alternativa para nomes diferentes (ex.: ratings_v2.parquet). Só ficheiros - a pasta ratings_by_year/ (Parquet particionado) não é considerada.
         for p in sorted(pasta_pq.glob(f"{tabela}*.parquet")):
             if p.is_file():
                 candidatos.append((p, "parquet"))
@@ -203,9 +185,7 @@ def localizar(base, dataset, tabela, fonte):
 def ligar_eda(base, dataset, fonte):
     """Cria uma ligação DuckDB com uma view por tabela encontrada. Devolve (ligação, origem)."""
     con = duckdb.connect()
-    # Fuso fixo em UTC: funções como to_timestamp devolvem TIMESTAMP WITH TIME ZONE e o ano
-    # ou o mês dependeriam do fuso da máquina. Este script usa epoch_ms (sem fuso), mas
-    # assim nenhuma query futura fica dependente do sítio onde corre.
+    # Fuso fixo em UTC: funções como to_timestamp devolvem TIMESTAMP WITH TIME ZONE e o anoou o mês dependeriam do fuso da máquina. Este script usa epoch_ms (sem fuso), mas assim nenhuma query futura fica dependente do sítio onde corre.
     con.execute("SET TimeZone = 'UTC'")
     origem = {}
     for t in TABELAS:
@@ -238,7 +218,7 @@ def q(con, sql):
 
 
 # ---------------------------------------------------------------------------
-# Estatística descritiva
+# PARTE 1.3 Estatística descritiva
 # ---------------------------------------------------------------------------
 def resumo_tabelas(con, origem):
     """Para cada coluna de cada tabela: n.º de linhas, nulos, % de nulos e valores distintos."""
@@ -274,9 +254,9 @@ def gini(valores):
 
 
 # ---------------------------------------------------------------------------
-# Figuras
-# Cada função faz uma query agregada, desenha uma figura e acrescenta o nome
-# do ficheiro à lista "figuras". As que calculam indicadores guardam-nos em "ind".
+# PARTE 1.4 Figuras
+#
+# Cada função faz uma query agregada, desenha uma figura e acrescenta o nome do ficheiro à lista "figuras". As que calculam indicadores guardam-nos em "ind".
 # ---------------------------------------------------------------------------
 def guardar(fig, pasta, nome, dataset, figuras):
     """Acrescenta o rodapé, grava a figura em PNG, fecha-a e regista o nome do ficheiro."""
@@ -288,7 +268,7 @@ def guardar(fig, pasta, nome, dataset, figuras):
 
 
 def fig_distribuicao_ratings(con, pasta, ds, figuras, ind):
-    """Figura 01: quantas avaliações há de cada valor (0,5 a 5 estrelas) e estatísticas do rating."""
+    """Figura 01: Quantas avaliações há de cada valor de avaliação(0,5 a 5 estrelas) e estatísticas do rating."""
     df = q(con, "SELECT rating, COUNT(*) AS n FROM ratings GROUP BY rating ORDER BY rating")
     est = con.execute("""SELECT AVG(rating), MEDIAN(rating), STDDEV(rating),
                                 MODE(rating) FROM ratings""").fetchone()
@@ -354,8 +334,7 @@ def fig_atividade(con, pasta, ds, figuras, ind, entidade):
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.5))
 
-    # Esquerda: histograma com escala logarítmica, porque a distribuição tem cauda muito longa
-    # (muitos com poucas avaliações, poucos com milhares)
+    # Esquerda: histograma com escala logarítmica, porque a distribuição tem cauda muito longa (muitos com poucas avaliações, poucos com milhares)
     bins = np.logspace(0, np.log10(cont.max() + 1), 40)
     a1.hist(cont, bins=bins, color=NOVA["verde"], edgecolor=NOVA["cinza"], linewidth=0.4)
     a1.set_xscale("log")
@@ -366,7 +345,7 @@ def fig_atividade(con, pasta, ds, figuras, ind, entidade):
     a1.set_xlabel(f"N.º de avaliações por {entidade}")
     a1.set_ylabel(rotulo_y)
 
-    # Direita: curva de Lorenz. Ordena do menos ao mais ativo e acumula a % de avaliações.
+    # Direita: curva de Lorenz - representar a distribuição relativa de uma variável. Ordena do menos ao mais ativo e acumula a % de avaliações.
     # Quanto mais a curva se afasta da diagonal, mais concentrada é a atividade.
     v = np.sort(cont)
     x = np.linspace(0, 1, v.size + 1)
@@ -392,7 +371,7 @@ def fig_atividade(con, pasta, ds, figuras, ind, entidade):
 
 
 def fig_cauda_longa(con, pasta, ds, figuras):
-    """Figura 04: n.º de avaliações de cada filme, do mais ao menos popular (escala log-log)."""
+    """Figura 04: N.º de avaliações de cada filme - do mais ao menos popular (escala log-log)."""
     df = q(con, "SELECT COUNT(*) AS n FROM ratings GROUP BY movieId ORDER BY n DESC")
     fig, ax = plt.subplots(figsize=(9, 4.5))
     rank = np.arange(1, len(df) + 1)   # posição de cada filme no ranking: 1, 2, 3, ...
@@ -407,10 +386,9 @@ def fig_cauda_longa(con, pasta, ds, figuras):
     guardar(fig, pasta, "04_cauda_longa_filmes.png", ds, figuras)
 
 
-# Nas figuras seguintes o ano é calculado em UTC (epoch_ms devolve TIMESTAMP sem fuso horário),
-# como em 02_to_parquet.py, para coincidir com as partições year=AAAA.
+# Nas figuras seguintes o ano é calculado em UTC (epoch_ms devolve TIMESTAMP sem fuso horário), como em 02_to_parquet.py, para coincidir com as partições year=AAAA.
 def fig_temporal(con, pasta, ds, figuras, ind):
-    """Figura 05: n.º de avaliações (barras) e avaliação média (linha) por ano."""
+    """Figura 05: N.º de avaliações (barras) e avaliação média (linha) por ano"""
     df = q(con, """SELECT year(epoch_ms(timestamp * 1000)) AS ano, COUNT(*) AS n,
                           AVG(rating) AS media, COUNT(DISTINCT userId) AS utilizadores
                    FROM ratings GROUP BY ano ORDER BY ano""")
@@ -443,8 +421,7 @@ def fig_temporal(con, pasta, ds, figuras, ind):
 
 def fig_generos(con, pasta, ds, figuras, ind):
     """Figura 06: n.º de filmes e avaliação média de cada género."""
-    # g: uma linha por par (filme, género), separando "Action|Comedy" com string_split + unnest.
-    # r: n.º de avaliações e média de cada filme.
+    # g: uma linha por par (filme, género), separando "Action|Comedy" com string_split + unnest. r: n.º de avaliações e média de cada filme.
     # A média do género é ponderada pelo n.º de avaliações de cada filme.
     df = q(con, """
         WITH g AS (SELECT movieId, unnest(string_split(genres, '|')) AS genero FROM movies),
@@ -481,7 +458,7 @@ def fig_generos(con, pasta, ds, figuras, ind):
 
 
 def fig_ano_lancamento(con, pasta, ds, figuras, ind):
-    """Figura 07: n.º de filmes por ano de lançamento, extraído do título, ex.: 'Heat (1995)'."""
+    """Figura 07: N.º de filmes por ano de lançamento, extraído do título'."""
     # A expressão regular apanha 4 dígitos entre parênteses no fim do título.
     # TRY_CAST devolve NULL (em vez de dar erro) quando o título não tem ano.
     df = q(con, r"""
@@ -504,7 +481,7 @@ def fig_ano_lancamento(con, pasta, ds, figuras, ind):
 
 
 def fig_matriz_genero_ano(con, pasta, ds, figuras):
-    """Figura 08: heatmap da avaliação média por género (linhas) e ano da avaliação (colunas)."""
+    """Figura 08: Heatmap da avaliação média por género (linhas) e ano da avaliação (colunas)."""
     df = q(con, """
         WITH g AS (SELECT movieId, unnest(string_split(genres, '|')) AS genero FROM movies)
         SELECT genero, year(epoch_ms(r.timestamp * 1000)) AS ano, AVG(r.rating) AS media
@@ -517,7 +494,7 @@ def fig_matriz_genero_ano(con, pasta, ds, figuras):
     fig, ax = plt.subplots(figsize=(13, 6.5))
     im = ax.imshow(pv.values, aspect="auto", cmap=CMAP_NOVA, vmin=2.8, vmax=4.3)
     ax.set_yticks(range(len(pv.index)), pv.index)
-    # Mostra no máximo ~15 anos no eixo horizontal, para os rótulos não se sobreporem
+    # Mostra no máximo 15 anos no eixo horizontal, para os rótulos não se sobreporem
     passo = max(1, len(pv.columns) // 15)
     ax.set_xticks(range(0, len(pv.columns), passo), pv.columns[::passo])
     ax.grid(False)
@@ -615,7 +592,7 @@ def fig_painel(con, pasta, ds, figuras, ind):
 
 
 # ---------------------------------------------------------------------------
-# Relatório
+# 1.5 Relatório
 # ---------------------------------------------------------------------------
 def relatorio_eda(pasta, ds, origem, resumo, ind, figuras, segundos):
     """Escreve eda_relatorio.md com as fontes, os indicadores, a qualidade das tabelas e as figuras."""
@@ -710,7 +687,7 @@ DEPENDENCIAS = {'eventos': ['10_flag_bots'], '10_flag_bots_calibracao': ['10_fla
 
 
 # ---------------------------------------------------------------------------
-# Ligação aos dados
+# PARTE 2.1Ligação aos dados
 # ---------------------------------------------------------------------------
 def leitor(cfg, tabela, fonte):
     """Texto SQL que lê uma tabela do dataset no formato pedido (Parquet ou CSV)."""
@@ -795,7 +772,7 @@ def preparar_emulacao(con):
 
 
 # ---------------------------------------------------------------------------
-# Execução das queries
+# PARTE 2.2 Execução das queries
 # ---------------------------------------------------------------------------
 def listar_queries(pasta, pedidas):
     """Ficheiros .sql de uma pasta (ordem alfabética), filtrados por --queries com as dependências."""
@@ -837,7 +814,7 @@ def correr(con, nome, ficheiro, fontes, destino):
 
 
 # ---------------------------------------------------------------------------
-# Verificações
+# PARTE 2.3 - Verificações
 # ---------------------------------------------------------------------------
 def ler(pasta, nome):
     """Lê o CSV de uma query, ou None se essa query não correu."""
@@ -1074,11 +1051,13 @@ def correr_analises(cfg, args):
                          'Athena emuladas diferem (ver analises_relatorio.md)')
 
 # ===========================================================================
-# Parte 3: coordenação entre contas (só com --coordenacao)
+# Parte 3: coordenação entre contas - Identificação de BOTS
+#
+# Deverá identificar poucos porque quando o movilens foi criado um utilizador ao registar-se tinha de avaliar pelnos 20 filmes e o carregamento era feito por bacth, quando submetia as avaliações, o que pode parecer "rajadas", s\ao na realidade ações normais.
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# Parâmetros do teste
+# PARTE 3.1 - Parâmetros do teste
 # ---------------------------------------------------------------------------
 
 # Lados: para cada dataset, o nome de cada grupo de notas extremas e a condição SQL que o define.
@@ -1110,7 +1089,7 @@ CHAVE = ['analise', 'notas', 'min_utilizadores', 'min_desvio']
 
 
 # ---------------------------------------------------------------------------
-# Dados e consultas no DuckDB
+# PARTE 3.2 - Dados e consultas no DuckDB
 # ---------------------------------------------------------------------------
 
 def ligar_coordenacao(cfg, memoria):
@@ -1333,7 +1312,7 @@ def jaccard_referencia(con):
 
 
 # ---------------------------------------------------------------------------
-# Passos do main
+# PARTE 3.3 - Passos do main
 # ---------------------------------------------------------------------------
 
 def lados_principais(comparacoes):
@@ -1631,7 +1610,7 @@ def correr_coordenacao(cfg, args):
 
 
 # ===========================================================================
-# Execução
+# PARTE 4 - Execução
 # ===========================================================================
 
 def parse_args():

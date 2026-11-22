@@ -3,23 +3,17 @@
 
 Objetivo:
     Correr cada query de sql/ sobre o Parquet sem partição e sobre o Parquet
-    particionado por ano, e registar quanto tempo demora. Assim vemos em que
-    queries as partições ajudam (as que filtram ou agrupam por ano) e em quais
-    não fazem diferença.
-    Cada query corre 3 vezes por formato e guarda-se a mediana, que é menos
-    sensível do que a média a uma corrida invulgarmente lenta.
+    particionado por ano, e registar quanto tempo demora. 
+    Assim vemos em que queries as partições ajudam (as que filtram ou agrupam por ano) e em quais não fazem diferença.
+    Cada query corre 3 vezes por formato e guarda-se a mediana, que é menos sensível do que a média a uma corrida invulgarmente lenta.
 
 Entradas:
-    sql/*.sql                        queries com os marcadores ${ratings} e ${movies}
-    data/<dataset>/parquet/          criado pelo 02_to_parquet.py
+    sql/*.sql - queries com os marcadores ${ratings} e ${movies}
+    data/<dataset>/parquet/ - criado pelo 02_to_parquet.py
 
 Saídas:
-    results/benchmarks.csv           dataset, query, formato, mediana do tempo (s), n.º de linhas
-                                     (acrescenta linhas a cada execução)
+    results/benchmarks.csv - dataset, query, formato, mediana do tempo (s), n.º de linhas acrescenta linhas a cada execução)
 
-Como correr:
-    python scripts/03_benchmark.py --dataset small
-    (ou, para todos os passos: python run_pipeline.py --dataset small)
 """
 import statistics
 import time
@@ -29,7 +23,7 @@ import duckdb
 
 from common import ROOT, append_row, load_config, now, parse_args
 
-RUNS = 3   # n.º de corridas por query e formato
+RUNS = 3   # n.º de corridas por query e formato, podemos alterar para 5 ou 10 se quisermos mais precisão, mas demora mais tempo
 
 
 def sources(pq_dir):
@@ -38,12 +32,12 @@ def sources(pq_dir):
     by_year = (pq_dir / 'ratings_by_year' / '*' / '*.parquet').as_posix()
     movies = f"read_parquet('{(pq_dir / 'movies.parquet').as_posix()}')"
 
-    # Sem partição: o ficheiro não tem a coluna year, por isso calculamo-la a partir do timestamp.
-    # Assim ${ratings} tem as mesmas colunas nos dois formatos e a mesma query serve para ambos.
+    # Sem partição: o ficheiro não tem a coluna year, por isso calculamo-la a partir do timestamp
+    # Assim ${ratings} tem as mesmas colunas nos dois formatos e a mesma query serve para ambos
     ratings_flat = f"(SELECT *, year(epoch_ms(timestamp * 1000)) AS year FROM read_parquet('{flat}'))"
 
     # Particionado: hive_partitioning=true transforma as pastas year=AAAA numa coluna year,
-    # sem ler nada de dentro dos ficheiros.
+    # sem ler nada de dentro dos ficheiros
     ratings_by_year = f"read_parquet('{by_year}', hive_partitioning=true)"
 
     return {
@@ -68,7 +62,7 @@ def main():
 
             times = []
             for _ in range(RUNS):
-                # Ligação nova em cada corrida, para que nenhuma corrida aproveite trabalho da anterior
+                # Ligação nova em cada corrida, para que nenhuma corrida aproveite trabalho da anterior, o corre o valor definido no inicio
                 con = duckdb.connect()
                 # Fuso fixo em UTC: funções como to_timestamp dependem do fuso da sessão.
                 # As queries de sql/ usam epoch_ms (sem fuso), mas assim nenhuma depende da máquina.

@@ -2,23 +2,21 @@
 06_upload_s3.py - Bloco cloud, passo 2 de 4: enviar data/cloud/<pasta>/ para o S3.
 
 Objetivo:
-    Confirmar as credenciais, criar os dois buckets (se ainda não existirem) e enviar para
-    s3://<bucket-dados>/<pasta>/ os ficheiros novos ou com tamanho diferente, como o
-    "aws s3 sync" (mas sem precisar da AWS CLI: usa o boto3). Não apaga nada no S3.
+    Confirmar as credenciais, criar os dois buckets (se ainda não existirem), um para dados e outro para resultadose enviar para s3://<bucket-dados>/<pasta>/ os ficheiros novos ou com tamanho diferente, como o
+    "aws s3 sync" (mas sem precisar da AWS CLI: usa o boto3). Não apaga nada no S3!!!
+    O boto3 é o SDK oficial da AWS para Python. É uma biblioteca que permite fazer por código tudo o que no lab fizemos à mão, na consola.
+    Não isamos nas aulas pq os lab foram efetuados pela interface web.
 
 Entradas:
     data/cloud/<pasta>/ (criado pelo 05_prepare_cloud.py)
     config.yaml (secção aws) e as opções --bucket-dados e --bucket-resultados. Se os buckets
     não forem indicados, os nomes são derivados do ID da conta:
     bdf26-g1-dados-<conta> e bdf26-g1-resultados-<conta>.
-    Credenciais em ~/.aws/credentials (copiadas do Learner Lab em cada sessão).
+    Credenciais em ~/.aws/credentials (copiadas do Learner Lab em cada sessão), tem de estar na pasta .aws/credentials.
 
 Saídas:
     Buckets e objetos no S3. O ID da conta só aparece no ecrã.
 
-Como correr:
-    python scripts/06_upload_s3.py --dataset small
-    (ou o bloco cloud todo: python run_pipeline.py --dataset small --steps cloud)
 """
 import argparse
 import sys
@@ -95,8 +93,7 @@ def sync_to_s3(s3, cloud_dir, bucket, pasta):
     print(f'  upload: {enviados} enviado(s), {saltados} já estavam iguais no S3, '
           f'{bytes_enviados / 1e6:.1f} MB em {time.perf_counter() - t0:.1f} s')
 
-    # Como o "aws s3 sync" sem --delete, não apaga nada; mas avisa, porque um ficheiro a
-    # mais na pasta de uma tabela é lido pelo Athena (a validação do setup apanharia a diferença).
+    # Como o "aws s3 sync" sem --delete, não apaga nada; mas avisa, porque um ficheiro a mais na pasta de uma tabela é lido pelo Athena (a validação do setup apanharia a diferença).
     a_mais = sorted(set(remotos) - chaves_locais)
     if a_mais:
         print(f'  AVISO: {len(a_mais)} objeto(s) no S3 que já não existem em data/cloud/ (não foram apagados):',

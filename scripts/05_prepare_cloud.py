@@ -1,15 +1,14 @@
 """
-05_prepare_cloud.py - Bloco cloud, passo 1 de 4: preparar localmente os ficheiros que vão para o S3.
+05_prepare_cloud.py - Bloco cloud, passo 1/4: preparar localmente os ficheiros que vão para o S3 da AWS.
 
 Objetivo:
-    Criar em data/cloud/<pasta>/ um espelho exato do que vai ser enviado para o S3 e
-    catalogado pelo Glue Data Catalog para consulta no Athena. O Glue e o Athena tratam
-    cada pasta como uma tabela, por isso cada tabela fica na sua própria pasta e não há
-    ficheiros soltos na raiz. Todas as tabelas são reescritas em Parquet com compressão
-    zstd, sem alterar os tipos da fase 1 (não há casts). Os ratings ficam em duas versões
-    (sem partição e particionados por ano) e há ainda uma cópia do ratings.csv, para
-    comparar no Athena os bytes lidos em CSV e em Parquet.
-    Este script não faz nenhuma chamada à AWS: só escreve ficheiros no disco local.
+    (1)Criar em data/cloud/<pasta>/ um espelho exato do que vai ser enviado para o S3 e catalogado pelo Glue Data Catalog para consulta no Athena. 
+    (2) O Glue e o Athena tratam cada pasta como uma tabela, por isso cada tabela fica na sua própria pasta e não há ficheiros soltos na raiz. 
+    (3) Todas as tabelas são reescritas em Parquet com compressão zstd, algoritmo de compactação de dados sem perdas e de código aberto, sem alterar os tipos da fase 1 (não há casts). 
+    (4) Os ratings ficam em duas versões
+        (4.1) sem partição e particionados por ano
+        (4.2) Cópia do ratings.csv, para comparar no Athena os bytes lidos em CSV e em Parquet.
+    (5) Este script não faz nnhuma chamada à AWS, requeria credenciais, só escreve ficheiros no disco local.
 
 Entradas:
     data/<dataset>/parquet/<tabela>.parquet   criados pelo 02_to_parquet.py
@@ -25,10 +24,6 @@ Saídas:
     reports/cloud_manifest_<dataset>.md               manifesto (só se todas as verificações passarem)
     <pasta> é o nome da pasta do GroupLens: ml-latest-small, ml-1m ou ml-32m.
 
-Como correr:
-    python scripts/05_prepare_cloud.py --dataset small
-    python scripts/05_prepare_cloud.py --dataset small --forcar   prepara mesmo que já esteja atualizada
-    O envio para o S3 é feito pelo passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
 import argparse
 import shutil
@@ -429,7 +424,7 @@ def main():
     args = parse_args()
     cfg = load_config(args.dataset)
     ds = cfg['dataset']
-    pasta = cfg['source']['folder']          # ml-latest-small, ml-1m ou ml-32m
+    pasta = cfg['source']['folder']          # ml-latest-small, ml-1m ou ml-32m - 1 pasta por dataset 
     pq_dir = cfg['paths']['parquet']
     csv_file = cfg['paths']['csv'] / 'ratings.csv'
     fase1_part = pq_dir / 'ratings_by_year'
@@ -445,20 +440,18 @@ def main():
 
     tables = tabelas_da_fase1(ds, pq_dir, fase1_part, csv_file)
 
-    # Um manifesto antigo deixaria de corresponder aos ficheiros: apaga-se já, e só se
-    # volta a escrever no fim, se todas as verificações passarem.
+    # Um manifesto antigo deixaria de corresponder aos ficheiros: apaga-se já, e só se volta a escrever no fim, se todas as verificações passarem
     if manifest.exists():
         manifest.unlink()
 
-    # Idempotência: apaga e recria a pasta inteira deste dataset
+    # Idempotência - apaga e recria a pasta inteira deste dataset
     if cloud_dir.exists():
         shutil.rmtree(cloud_dir)
     cloud_dir.mkdir(parents=True)
 
     t_inicio = time.perf_counter()
     con = duckdb.connect()
-    # to_timestamp devolve TIMESTAMP WITH TIME ZONE: sem fixar o fuso, o ano de um rating
-    # perto da meia-noite de 31/12 dependeria do fuso da máquina. Em UTC fica igual à fase 1.
+    # to_timestamp devolve TIMESTAMP WITH TIME ZONE: sem fixar o fuso, o ano de um rating perto da meia-noite de 31/12 dependeria do fuso da máquina. Em UTC fica igual à fase sem cloud, que também usa UTC. O Athena também usa UTC.
     con.execute("SET TimeZone = 'UTC'")
     # A ordem das linhas não interessa e desligá-la poupa memória no 32M (como no 02_to_parquet.py)
     con.execute('SET preserve_insertion_order = false')

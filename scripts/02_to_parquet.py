@@ -1,26 +1,20 @@
 """
-02_to_parquet.py - Passo 2 do pipeline: converter os CSV em Parquet.
+02_to_parquet.py - Passo 2 do pipeline: converter os CSV em Parquet
 
 Objetivo:
-    Passar as tabelas de CSV (texto, linha a linha) para Parquet (binário, coluna a
-    coluna, comprimido) e criar uma segunda versão dos ratings particionada por ano.
-    As duas versões servem para comparar, no passo 3, o efeito das partições.
-    A conversão é feita com o COPY do DuckDB, em streaming: os dados não passam
-    pelo pandas nem precisam de caber todos na memória.
+    Passar as tabelas CSV (texto, linha a linha) para Parquet (binário, coluna a
+    coluna, comprimido) e criar uma segunda versão dos ratings particionada por ano, é a tabela com maior volume de dados e só faria sentido um particionamento por ano.
+    As duas versões servem para comparar, no passo 3 - benchmark, o efeito das partições.
+    A conversão é feita com o COPY do DuckDB, em streaming: dados não passampelo pandas nem precisam de caber todos na memória.
 
 Entradas:
     data/<dataset>/csv/*.csv (criados pelo 01_ingest.py)
 
 Saídas:
     data/<dataset>/parquet/<tabela>.parquet   uma por tabela, sem partição
-    data/<dataset>/parquet/ratings_by_year/   ratings particionado: year=1996/, year=1997/, ...
-                                              (ano calculado a partir do timestamp, em UTC)
-    results/sizes.csv                         tamanho do CSV, do Parquet e do Parquet por ano,
-                                              e o tempo de cada conversão (acrescenta linhas)
+    data/<dataset>/parquet/ratings_by_year/   ratings particionado: year=1996/, year=1997/, etc - (ano calculado a partir do timestamp, em UTC)
+    results/sizes.csv                         tamanho do CSV, do Parquet e do Parquet por ano, e o tempo de cada conversão (acrescenta linhas)
 
-Como correr:
-    python scripts/02_to_parquet.py --dataset small
-    (ou, para todos os passos: python run_pipeline.py --dataset small)
 """
 import shutil
 import time
@@ -61,7 +55,7 @@ def particionar_ratings(con, pq_file, part_dir, row):
     # O COPY particionado não substitui pastas que já existem
     if part_dir.exists():
         shutil.rmtree(part_dir)
-    # epoch_ms devolve TIMESTAMP sem fuso horário, por isso o ano não depende da máquina
+    # epoch_ms devolve TIMESTAMP sem fuso horário (UTC), por isso o ano não depende da máquina
     t0 = time.perf_counter()
     con.execute(f"""
         COPY (SELECT *, year(epoch_ms(timestamp * 1000)) AS year
@@ -83,7 +77,7 @@ def main():
     print(f'[to_parquet] dataset={ds}')
 
     con = duckdb.connect()
-    # A ordem das linhas não interessa aqui, e desligá-la poupa memória no 32M
+    # A ordem das linhas não interessa aqui, e desligar poupa memória quando corre o 32M
     con.execute('SET preserve_insertion_order = false')
 
     for table, schema in SCHEMAS.items():
