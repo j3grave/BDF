@@ -46,21 +46,19 @@ BDF/
 │   ├── 01_ingest.py               # bloco 1, preparação dos dados: download e CSV
 │   ├── 02_to_parquet.py           # bloco 1: Parquet e Parquet por ano
 │   ├── 03_benchmark.py            # bloco 2, desempenho local: tempos das queries
-│   ├── 04_analise.py              # bloco 3, análise dos dados: EDA, análises e coordenação
+│   ├── 04_analise.py              # bloco 3, análise dos dados: EDA e análises
 │   ├── 05_prepare_cloud.py        # bloco 4, cloud: ficheiros para o S3, em data/cloud/
-│   ├── 06_upload_s3.py            # bloco 4: credenciais, buckets e upload
+│   ├── 06_upload_s3.py            # bloco 4: buckets e upload
 │   ├── 07_athena_setup.py         # bloco 4: catálogo no Glue e validação das contagens
 │   ├── 08_athena_benchmark.py     # bloco 4: benchmark DuckDB vs Athena
-│   └── athena_common.py           # partilhado pelo bloco 4: opções AWS e cliente do Athena
+│   └── athena_common.py           # partilhado pelo bloco 4: configuração AWS e cliente do Athena
 ├── sql/
 │   ├── 01_...sql a 05_...sql      # perguntas do benchmark (DuckDB)
-│   ├── analise/                   # as 16 queries da análise (DuckDB)
+│   ├── analise/                   # as 17 queries da análise (DuckDB)
 │   ├── cloud/                     # query 06 do benchmark cloud, versão DuckDB
 │   └── athena/
 │       ├── ddl/                   # CREATE TABLE do Athena
-│       ├── queries/               # queries 01 a 06 em Trino
-│       └── analise/               # as 16 queries de sql/analise/ em Trino
-├── reports/                       # manifestos da preparação para a cloud
+│       └── queries/               # queries 01 a 06 em Trino
 ├── results/                       # resultados leves (CSV, PNG e relatórios .md)
 └── data/                          # não versionado: downloads, CSV, Parquet e data/cloud/
 ```
@@ -74,8 +72,7 @@ Dentro de `results/`:
 | `benchmarks.csv` | Mediana do tempo e n.º de linhas de cada query, por formato |
 | `cloud_benchmarks.csv` | DuckDB vs Athena: tempo, MB lidos e n.º de linhas |
 | `<dataset>/eda/` | Figuras, indicadores e `eda_relatorio.md` |
-| `<dataset>/analises/` | Um CSV por query, `analises_relatorio.md` e `athena_emulado/` |
-| `<dataset>/bots_coordenacao/` | Resultados do teste de coordenação |
+| `<dataset>/analises/` | Um CSV por query e `analises_relatorio.md` |
 
 ## Ambiente
 
@@ -96,33 +93,31 @@ Com conda: `conda create -n bdf python=3.13`, `conda activate bdf` e
 ## Como correr
 
 ```bash
-python run_pipeline.py                                 # pergunta o dataset, a cloud e onde gravar
-python run_pipeline.py --dataset small --resultados-locais   # blocos 1 a 3, sem mexer em results/
-python run_pipeline.py --dataset small                 # blocos 1 a 3
-python run_pipeline.py --dataset 1m --coordenacao      # o mesmo, com o teste de coordenação
-python run_pipeline.py --dataset 32m --coordenacao --repeticoes 800  # teste de coordenação conclusivo
-python run_pipeline.py --dataset 1m --steps benchmark  # só um passo
-python run_pipeline.py --dataset small --steps cloud   # bloco 4 (usa a AWS)
+python run_pipeline.py
 ```
 
-Sem opções, o `run_pipeline.py` pergunta o dataset, se corre só o pipeline local, o local e a
-cloud, ou só a cloud, se corre o teste de coordenação entre contas (não, exploratório com 20
-permutações, ou conclusivo com 800) e se atualiza os resultados do repositório. Por omissão não atualiza: grava
-em `results_local/`, que não está no git, e uma corrida de teste não deixa alterações para commit.
-Para atualizar `results/` (por exemplo, antes de uma entrega), responde "sim". Se escolheres a cloud, confirma logo as credenciais em `~/.aws/credentials`:
-se não forem válidas, mostra quando o ficheiro foi alterado pela última vez e espera. Enquanto
-espera, esse terminal não aceita comandos: copia o bloco `[default]` do Learner Lab e carrega Enter,
-e o pipeline grava-o em `~/.aws/credentials` (só se for mesmo esse bloco, e sem mostrar as chaves).
-Se continuar a falhar, mostra o código de erro da AWS e de onde está a ler as credenciais. No fim das perguntas mostra o comando equivalente, para a próxima
-vez. Com opções, não pergunta nada; sem `--dataset`, usa o valor do `config.yaml`. Cada script também corre sozinho, por exemplo
-`python scripts/02_to_parquet.py --dataset 1m`. Se um script falhar, o pipeline pára.
+O pipeline corre só com este comando e faz as perguntas no terminal (escreve o número da opção, ou
+Enter para a opção marcada):
+
+1. o dataset: `small`, `1m` ou `32m` (o Enter escolhe o do `config.yaml`);
+2. o que correr: só o pipeline local (blocos 1 a 3), o local e a cloud, ou só a cloud;
+3. se atualiza os resultados do repositório. Por omissão não atualiza: grava em `results_local/`,
+   que não está no git, e uma corrida de teste não deixa alterações para commit. Para atualizar
+   `results/` (por exemplo, antes de uma entrega), responde "sim".
+
+Se escolheres a cloud, o pipeline confirma logo as credenciais AWS e só as pede se faltarem ou
+tiverem expirado (ver [Credenciais](#credenciais)). Se um script falhar, o pipeline pára.
+
+Os passos que já foram feitos não se repetem: o download só acontece se o zip não existir, a
+conversão para Parquet só se o Parquet não existir (ou se o CSV for mais recente) e a pasta
+`data/cloud/` só é preparada de novo se estiver desatualizada ou não passar as verificações.
 
 | Bloco | Passo | Scripts |
 |---|---|---|
 | 1. Preparação dos dados | `ingest`, `parquet` | `01_ingest.py`, `02_to_parquet.py` |
 | 2. Desempenho local | `benchmark` | `03_benchmark.py` |
 | 3. Análise dos dados | `analise` | `04_analise.py` |
-| 4. Cloud | `cloud` (só a pedido) | `05_prepare_cloud.py` a `08_athena_benchmark.py` |
+| 4. Cloud | `cloud` (só quando se escolhe no menu) | `05_prepare_cloud.py` a `08_athena_benchmark.py` |
 
 A pasta `data/<dataset>` pode ser um symlink para outra cópia onde os dados já existem, para não
 repetir o `ingest` e o `parquet`:
@@ -137,62 +132,69 @@ ln -s "/caminho/para/outra/copia/BDF/data/32m" data/32m
 | Script | O que faz |
 |---|---|
 | `01_ingest.py` | Descarrega o zip (só se ainda não existir) e grava CSV com o mesmo esquema nos três datasets. Converte os `.dat` do 1M (separador `::`, sem cabeçalho, latin-1). |
-| `02_to_parquet.py` | Converte para Parquet com o `COPY` do DuckDB: uma versão sem partição e o `ratings` particionado por ano (em UTC). Regista os tamanhos. |
+| `02_to_parquet.py` | Converte para Parquet com o `COPY` do DuckDB: uma versão sem partição e o `ratings` particionado por ano (em UTC). Regista os tamanhos. Uma tabela que já tenha o Parquet, mais recente do que o CSV, não é convertida de novo. |
 
 ## Bloco 2: desempenho local
 
-O `03_benchmark.py` corre 3 vezes cada query de `sql/` nos dois Parquet e regista a mediana e o
+O `03_benchmark.py` corre cada query de `sql/` nos dois Parquet e regista a mediana do tempo e o
 n.º de linhas. Nas queries, `${ratings}` e `${movies}` são substituídos pela leitura do Parquet.
+
+**N.º de corridas (`RUNS`).** Cada query corre `RUNS` vezes por formato e guarda-se a mediana, que
+é menos sensível a uma corrida invulgarmente lenta do que a média. A variável está no início de
+dois scripts, ambos com 3:
+
+| Script | O que conta | Efeito de aumentar |
+|---|---|---|
+| `scripts/03_benchmark.py` | corridas de cada query em cada Parquet (bloco 2) | mais tempo de execução |
+| `scripts/08_athena_benchmark.py` | corridas de cada query em cada formato, no DuckDB e no Athena (bloco 4) | mais tempo e mais custo: cada corrida no Athena é cobrada (mínimo de 10 MB por query) |
+
+Para mudar, altera o valor no script (por exemplo, `RUNS = 5`). As linhas dos CSV de resultados
+têm a coluna `runs` no benchmark cloud, por isso corridas com valores diferentes continuam a
+distinguir-se.
 
 ## Bloco 3: análise dos dados
 
-O `04_analise.py` tem três partes:
+O `04_analise.py` tem duas partes:
 
 1. **Análise exploratória (EDA):** indicadores, qualidade das tabelas, 10 figuras e relatório.
-2. **Análises:** as 16 queries de `sql/analise/` (qualidade, integridade, evolução no tempo,
-   filmes, uso da escala e utilizadores suspeitos), um CSV por query. Verifica a qualidade e a
-   integridade dos dados e compara os totais com a EDA. Se uma verificação falhar, o pipeline pára.
-3. **Coordenação entre contas** (só com `--coordenacao`, ou quando se escolhe no menu, porque
-   cada permutação demora cerca de 3 segundos no 32M): procura rajadas, em que várias contas dão a mesma nota extrema ao mesmo filme na mesma
-   hora, longe da média do filme, e compara-as com uma linha de base em que os timestamps são
-   baralhados dentro de cada filme. Com 40 comparações, só a partir de 800 permutações
-   (`--repeticoes 800`, cerca de 40 minutos no 32M) um resultado pode passar a correção de Bonferroni.
+2. **Análises:** as 17 queries de `sql/analise/` (qualidade, integridade, evolução no tempo,
+   filmes, uso da escala, registo e utilizadores suspeitos), um CSV por query. Verifica a qualidade
+   e a integridade dos dados e compara os totais com a EDA. Se uma verificação falhar, o pipeline pára.
 
-```bash
-python scripts/04_analise.py --dataset small                  # o mesmo que o passo analise
-python scripts/04_analise.py --dataset 1m --fonte csv         # lê os CSV em vez do Parquet
-python scripts/04_analise.py --dataset small --emular-athena  # testa também as versões Athena
-python scripts/04_analise.py --dataset 32m --coordenacao --repeticoes 200 --memoria 12GB
-```
+**As primeiras 24 horas** (`sql/analise/registo_24h.sql`). Ao criar a conta, o MovieLens pedia
+avaliações para começar a recomendar, e o GroupLens só inclui utilizadores com 20 ou mais. Por isso
+o registo tem sempre um pico de atividade:
 
-Cada query de `sql/analise/` tem uma versão Athena com o mesmo nome em `sql/athena/analise/`. Com
-`--emular-athena`, essas versões correm no DuckDB, com macros que imitam as funções do Trino, e
-cada resultado é comparado com o da versão DuckDB. Isto confirma a lógica, mas não a sintaxe do
-Trino, que só se confirma no Athena.
+| Indicador | small | 1M |
+|---|---:|---:|
+| Utilizadores com 20 ou mais avaliações nas primeiras 24 h | 94,1% | 93,8% |
+| Chegam à 20.ª avaliação em menos de 10 min | 64,9% | 60,6% |
+| Chegam à 20.ª avaliação em menos de 1 h | 88,5% | 90,2% |
+| Tempo mediano até à 20.ª avaliação | 6,3 min | 8,2 min |
+| Utilizadores com toda a atividade nas primeiras 24 h | 59,3% | 62,9% |
+
+Um pico no registo é o uso normal e não distingue um bot de uma pessoa, por isso a deteção de
+bots ignora as primeiras 24 horas. O custo dessa escolha está na última linha: os utilizadores que
+só avaliaram no registo (cerca de 60%) não podem ser sinalizados.
 
 **Utilizadores suspeitos** (`sql/analise/10_flag_bots.sql`). Uma regra simples, baseada em muita
-atividade, sinalizava 34% dos utilizadores do small e 47% do 1M, quase todos por causa do registo
-inicial. A query usa duas regras:
+atividade, sinalizava 34% dos utilizadores do small e 47% do 1M, quase todos por causa do registo.
+A query usa agora uma só regra, com um limiar fixo:
 
-- regra A: ritmo sustentado depois das primeiras 24 horas, acima do quantil p99,9;
-- regra B: registo extremo, com pelo menos 100 eventos e um intervalo mediano de 2 segundos ou menos.
+- regra A: 100 ou mais eventos numa janela de 10 minutos, depois das primeiras 24 horas (um evento
+  a cada 6 segundos, durante 10 minutos seguidos).
 
-Com elas, os suspeitos são 0,33% no small e 0,10% no 1M. As submissões em lote (10 ou mais
-avaliações no mesmo segundo) são contadas à parte e não entram como bots.
-
-**Coordenação entre contas.** Os resultados ficam em `results/<dataset>/bots_coordenacao/`:
-
-- 1M: não há mais rajadas do que na linha de base. As mais fortes são de contas novas, no pico de
-  registos de 20 e 21/11/2000.
-- 32M: há mais rajadas do que na linha de base, mas o excesso fica todo antes da escala de meias
-  estrelas (fevereiro de 2003) e explica-se pela mudança de escala, não por coordenação. Com 200
-  permutações, nenhuma comparação passa a correção de Bonferroni.
+Um evento é o conjunto das avaliações gravadas no mesmo segundo pelo mesmo utilizador. Com esta
+regra, os suspeitos são 2 no small (0,33%: os utilizadores 380 e 610) e nenhum no 1M, onde o
+máximo é 45 eventos em 10 minutos. O `10_flag_bots_calibracao.sql` mostra quantos ficariam
+sinalizados com 50, 60 e 100 eventos. As submissões em lote (10 ou mais avaliações no mesmo
+segundo) são contadas à parte e não entram como bots.
 
 ## Bloco 4: cloud (AWS Academy Learner Lab)
 
 Leva o dataset para o S3, regista as tabelas no Glue Data Catalog e compara o Athena com o DuckDB.
-Cada colega corre-o na sua conta, com um só comando. Não é preciso configurar buckets nem
-instalar a AWS CLI.
+Cada colega corre-o na sua conta, escolhendo a cloud no menu do `run_pipeline.py`. Não é preciso
+configurar buckets nem instalar a AWS CLI.
 
 ### Antes de começar
 
@@ -202,40 +204,34 @@ instalar a AWS CLI.
 
 ### Credenciais
 
-As credenciais do Learner Lab mudam a cada "Start Lab" e expiram ao fim de cerca de 4 horas. Em
-cada sessão:
+As credenciais do Learner Lab mudam a cada "Start Lab" e expiram ao fim de cerca de 4 horas. Não
+é preciso preparar nada antes: quando se escolhe a cloud, o `run_pipeline.py` confirma as
+credenciais e, se não existirem ou tiverem expirado, pede-as uma a uma:
 
-1. "Start Lab" e esperar pelo indicador verde.
-2. "AWS Details" > "AWS CLI: Show" e copiar o bloco `[default]`, com as três linhas.
-3. Gravar o bloco em `~/.aws/credentials`:
+1. No Learner Lab, "Start Lab" e esperar pelo indicador verde.
+2. "AWS Details" > "AWS CLI: Show".
+3. Copiar e colar no terminal, quando o pipeline pedir, o valor de `aws_access_key_id`, depois o de
+   `aws_secret_access_key` e por fim o de `aws_session_token` (só o que está depois do `=`). A chave
+   secreta e o token não aparecem no ecrã.
 
-   ```bash
-   mkdir -p ~/.aws && pbpaste > ~/.aws/credentials     # macOS
-   ```
+O pipeline grava-as em `.aws/credentials`, dentro da pasta do projeto, só com permissão de leitura
+para o próprio utilizador, e confirma-as de novo. A pasta `.aws/` está no `.gitignore`: as
+credenciais nunca vão para o git nem para o `config.yaml`, e o `~/.aws/` pessoal não é alterado.
 
-   No Windows e no Linux, colar à mão num editor (`%UserProfile%\.aws\credentials` no Windows).
+### O que acontece
 
-As credenciais ficam fora do repositório. Nunca vão para o `config.yaml` nem para o git.
+O passo `cloud` corre quatro scripts, por ordem, e pára se algum falhar:
 
-### Comando
-
-```bash
-python run_pipeline.py --dataset small --steps cloud
-```
-
-O passo `cloud` não corre por omissão. Corre quatro scripts, por ordem, e pára se algum falhar:
-
-1. **`05_prepare_cloud.py`** grava em `data/cloud/<pasta>/` uma cópia exata do que vai para o S3.
-   Se a pasta já estiver atualizada (manifesto mais recente do que o Parquet), não faz nada;
-   `--forcar` prepara de novo. Não contacta a AWS.
-2. **`06_upload_s3.py`** confirma as credenciais (se faltarem ou tiverem expirado, explica como as
-   renovar), cria os buckets em `us-east-1` se não existirem (`bdf26-g1-dados-<ID da conta>` e
-   `bdf26-g1-resultados-<ID da conta>`) e envia os ficheiros novos ou alterados (outro tamanho ou data mais recente). Não apaga
-   nada no S3. O ID da conta só aparece no ecrã e nunca é gravado. Para usar outros nomes, passa
-   `--bucket-dados` e `--bucket-resultados` ou escreve-os no `config.yaml`.
-3. **`07_athena_setup.py --recriar`** cria a base de dados `movielens_<dataset>` e as quatro
-   tabelas, carrega as partições (`MSCK REPAIR TABLE`, depois do upload) e compara as contagens
-   (total e por ano) com os ficheiros locais. Antes de enviar o DDL, confirma, sem AWS, que as
+1. **`05_prepare_cloud.py`** grava em `data/cloud/<pasta>/` uma cópia exata do que vai para o S3 e
+   verifica-a. Se a pasta já existir, for mais recente do que o Parquet e passar as verificações,
+   não faz nada. Não contacta a AWS.
+2. **`06_upload_s3.py`** cria os buckets em `us-east-1` se não existirem
+   (`bdf26-g1-dados-<ID da conta>` e `bdf26-g1-resultados-<ID da conta>`) e envia os ficheiros novos
+   ou alterados (outro tamanho ou data mais recente). Não apaga nada no S3. O ID da conta só aparece
+   no ecrã e nunca é gravado. Para usar outros nomes, escreve-os no `config.yaml`.
+3. **`07_athena_setup.py`** cria a base de dados `movielens_<dataset>` e as quatro tabelas (apaga-as
+   antes, se existirem), carrega as partições (`MSCK REPAIR TABLE`, depois do upload) e compara as
+   contagens (total e por ano) com os ficheiros locais. Antes de enviar o DDL, confirma que as
    colunas e os tipos coincidem com `data/cloud/`.
 4. **`08_athena_benchmark.py`** corre as queries de `sql/athena/queries/` no Athena e as mesmas
    perguntas no DuckDB sobre `data/cloud/`, em CSV, Parquet e Parquet particionado. Uma query só é
@@ -260,24 +256,17 @@ data/cloud/ml-32m/                    # ml-latest-small no small, ml-1m no 1M
 - Uma pasta por tabela, porque o Glue e o Athena tratam cada pasta como uma tabela. Só vão o
   `ratings` (em três versões) e o `movies`: o `tags` e o `links` não são usados por nenhuma query
   do Athena.
+- O `ratings.csv` vai de propósito: é a base de comparação que mostra quanto o Athena lê (e cobra)
+  em CSV face ao Parquet. No 32M são 877 MB, contra cerca de 159 MB em Parquet.
 - Parquet com compressão zstd e os mesmos tipos do bloco 1.
 - O `05_prepare_cloud.py` compara as contagens com a origem, a soma das partições com o `ratings`
-  e as contagens por ano com o bloco 1, e confirma os tipos e a compressão. Se tudo passar, grava
-  `reports/cloud_manifest_<dataset>.md`.
+  e as contagens por ano com o bloco 1, e confirma os tipos e a compressão.
 
-O DDL é escrito à mão, em vez de usar um crawler do Glue, para os tipos ficarem iguais aos do
-manifesto. As diferenças entre o Trino e o DuckDB (`CROSS JOIN UNNEST` nos géneros,
+O DDL é escrito à mão, em vez de usar um crawler do Glue, para os tipos ficarem iguais aos dos
+ficheiros. As diferenças entre o Trino e o DuckDB (`CROSS JOIN UNNEST` nos géneros,
 `approx_percentile` em vez de `MEDIAN`, `"timestamp"` entre aspas) estão no cabeçalho de cada
 query. A query `06_ratings_desde_2015` mostra o partition pruning. A versão DuckDB está em
 `sql/cloud/`, para não alterar o benchmark do bloco 2.
-
-```bash
-# Sem AWS: preparar os ficheiros, verificar o DDL, ver o SQL e correr só a parte DuckDB
-python scripts/05_prepare_cloud.py --dataset small
-python scripts/07_athena_setup.py --dry-run
-python scripts/08_athena_benchmark.py --dry-run
-python scripts/08_athena_benchmark.py --engines duckdb
-```
 
 ### Custos
 
@@ -295,7 +284,8 @@ O orçamento do Learner Lab é limitado: testa sempre primeiro com o `small`.
 
 | Sintoma | Causa | O que fazer |
 |---|---|---|
-| `ExpiredToken`, `InvalidClientTokenId` ou "as credenciais AWS não existem, expiraram ou são inválidas" | A sessão terminou ou o `~/.aws/credentials` é de uma sessão anterior. | "Start Lab" e copiar de novo o bloco de "AWS Details". |
+| `ExpiredToken`, `InvalidClientTokenId` ou "as credenciais AWS não existem, expiraram ou são inválidas" | A sessão terminou ou o `.aws/credentials` do projeto é de uma sessão anterior. | Voltar a correr `python run_pipeline.py` e colar as chaves novas quando as pedir. |
+| As chaves novas são pedidas outra vez, em ciclo | Há `AWS_ACCESS_KEY_ID` nas variáveis de ambiente, que têm prioridade sobre o ficheiro. | Fechar o terminal ou correr `unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN`. |
 | 0 linhas no `ratings_part` ou "contagens por ano diferentes" | As partições não foram registadas no catálogo. | Voltar a correr o passo `cloud`, que recria as tabelas e corre o `MSCK REPAIR TABLE` depois do upload. |
 | Os buckets ou as tabelas desapareceram | O "Reset" do Learner Lab apaga buckets, objetos e catálogo. O "End Lab" não apaga. | Voltar a correr o passo `cloud`. |
 | "o bucket ... existe mas pertence a outra conta" | Alguém já usa esse nome de bucket (os nomes são únicos em toda a AWS). | Repor `null` no `config.yaml` ou escolher outro nome. |

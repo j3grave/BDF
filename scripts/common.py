@@ -15,7 +15,6 @@ Saídas:
     Nenhuma diretamente; é importado pelos outros scripts com `from common import ...`.
 
 """
-import argparse
 import csv
 import os
 from datetime import datetime
@@ -47,10 +46,11 @@ SCHEMAS = {
 
 
 def load_config(dataset=None):
-    """Lê o config.yaml, aplica o --dataset (se vier) e acrescenta os caminhos das pastas."""
+    """Lê o config.yaml, aplica o dataset escolhido no menu e acrescenta os caminhos das pastas."""
     cfg = yaml.safe_load((ROOT / 'config.yaml').read_text(encoding='utf-8'))
 
-    # O --dataset da linha de comandos tem prioridade sobre o valor do config.yaml
+    # O run_pipeline.py passa o dataset escolhido aos scripts na variável BDF_DATASET
+    dataset = dataset or os.environ.get('BDF_DATASET')
     if dataset:
         cfg['dataset'] = dataset
     if cfg['dataset'] not in DATASETS:
@@ -71,14 +71,6 @@ def load_config(dataset=None):
     }
     cfg['source'] = DATASETS[ds]
     return cfg
-
-
-def parse_args(description):
-    """Lê a opção --dataset da linha de comandos (comum a todos os scripts)."""
-    parser = argparse.ArgumentParser(description=description,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
-    return parser.parse_args()
 
 
 def duckdb_columns(schema):
