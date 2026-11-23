@@ -33,8 +33,14 @@ import os
 import subprocess
 import sys
 import time
-from getpass import getpass
 from pathlib import Path
+
+try:
+    # Com o readline, o input() aceita linhas coladas longas: sem ele, o terminal do macOS corta
+    # cada linha em 1 024 caracteres e o aws_session_token do Learner Lab é maior
+    import readline  # noqa: F401
+except ImportError:
+    pass  # Windows: não existe, e a consola não tem esse limite
 
 # O common.py está em scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
@@ -82,15 +88,22 @@ def limpar(texto):
     return "".join(c for c in texto if 32 < ord(c) < 127)
 
 
+def pedir(nome):
+    """Pede um valor no terminal e mostra quantos caracteres recebeu, para se ver que a colagem funcionou."""
+    valor = limpar(input(f"{nome} > "))
+    print(f"  recebido: {len(valor)} caracteres")
+    return valor
+
+
 def pedir_credenciais():
-    """Pede as três chaves do Learner Lab, uma a uma, e grava-as em .aws/credentials. Nunca as mostra."""
+    """Pede as três chaves do Learner Lab, uma a uma, e grava-as em .aws/credentials."""
     print(
         'No Learner Lab: "Start Lab", esperar pelo indicador verde e abrir "AWS Details" > "AWS CLI: Show".\n'
-        "Copia cada valor (só o que está depois do sinal =) e cola-o aqui. A chave secreta e o token não aparecem no ecrã."
+        "Copia cada valor (só o que está depois do sinal =), cola-o aqui e carrega Enter."
     )
-    chave = limpar(input("aws_access_key_id > "))
-    secreta = limpar(getpass("aws_secret_access_key > "))
-    token = limpar(getpass("aws_session_token > "))
+    chave = pedir("aws_access_key_id")
+    secreta = pedir("aws_secret_access_key")
+    token = pedir("aws_session_token")
     CREDENCIAIS.parent.mkdir(exist_ok=True)
     CREDENCIAIS.write_text(
         f"[default]\naws_access_key_id = {chave}\naws_secret_access_key = {secreta}\n"

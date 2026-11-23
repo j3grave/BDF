@@ -211,8 +211,8 @@ credenciais e, se não existirem ou tiverem expirado, pede-as uma a uma:
 1. No Learner Lab, "Start Lab" e esperar pelo indicador verde.
 2. "AWS Details" > "AWS CLI: Show".
 3. Copiar e colar no terminal, quando o pipeline pedir, o valor de `aws_access_key_id`, depois o de
-   `aws_secret_access_key` e por fim o de `aws_session_token` (só o que está depois do `=`). A chave
-   secreta e o token não aparecem no ecrã.
+   `aws_secret_access_key` e por fim o de `aws_session_token` (só o que está depois do `=`), com Enter
+   depois de cada um. O pipeline mostra quantos caracteres recebeu: o token tem centenas.
 
 O pipeline grava-as em `.aws/credentials`, dentro da pasta do projeto, só com permissão de leitura
 para o próprio utilizador, e confirma-as de novo. A pasta `.aws/` está no `.gitignore`: as
