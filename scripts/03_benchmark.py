@@ -21,7 +21,7 @@ from string import Template
 
 import duckdb
 
-from common import ROOT, append_row, load_config, now
+from common import ROOT, append_row, load_config, now, parse_args
 
 RUNS = 3   # n.º de corridas por query e formato, podemos alterar para 5 ou 10 se quisermos mais precisão, mas demora mais tempo
 
@@ -48,7 +48,8 @@ def sources(pq_dir):
 
 def main():
     """Corre cada query RUNS vezes em cada formato e regista a mediana e o n.º de linhas."""
-    cfg = load_config()
+    args = parse_args(__doc__)
+    cfg = load_config(args.dataset)
     ds = cfg['dataset']
     print(f'[benchmark] dataset={ds}')
 

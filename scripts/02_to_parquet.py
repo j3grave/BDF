@@ -5,7 +5,6 @@ Objetivo:
     Passar as tabelas CSV (texto, linha a linha) para Parquet (binário, coluna a
     coluna, comprimido) e criar uma segunda versão dos ratings particionada por ano, é a tabela com maior volume de dados e só faria sentido um particionamento por ano.
     As duas versões servem para comparar, no passo 3 - benchmark, o efeito das partições.
-    Como no download do passo 1, uma tabela que já tenha o Parquet (mais recente do que o CSV) não é convertida de novo.
     A conversão é feita com o COPY do DuckDB, em streaming: dados não passampelo pandas nem precisam de caber todos na memória.
 
 Entradas:
@@ -22,7 +21,7 @@ import time
 
 import duckdb
 
-from common import SCHEMAS, append_row, duckdb_columns, load_config, now, size_on_disk
+from common import SCHEMAS, append_row, duckdb_columns, load_config, now, parse_args, size_on_disk
 
 
 def converter_tabela(con, ds, table, schema, csv_file, pq_file):
@@ -70,7 +69,8 @@ def particionar_ratings(con, pq_file, part_dir, row):
 
 def main():
     """Converte cada CSV em Parquet, particiona os ratings por ano e regista tamanhos e tempos."""
-    cfg = load_config()
+    args = parse_args(__doc__)
+    cfg = load_config(args.dataset)
     ds = cfg['dataset']
     pq_dir = cfg['paths']['parquet']
     pq_dir.mkdir(parents=True, exist_ok=True)
@@ -85,14 +85,6 @@ def main():
         if not csv_file.exists():
             continue   # o 1M não tem tags nem links
         pq_file = pq_dir / f'{table}.parquet'
-        # Já convertido e o CSV não mudou depois: salta, como o download do 01_ingest.py
-        # shortcut: só olha para as datas; se uma conversão for interrompida a meio, apagar o .parquet à mão
-        feito = pq_file.exists() and pq_file.stat().st_mtime >= csv_file.stat().st_mtime
-        if table == 'ratings':
-            feito = feito and (pq_dir / 'ratings_by_year').exists()
-        if feito:
-            print(f'  {table:8} já convertido, não converte: {pq_file.name}')
-            continue
 
         row = converter_tabela(con, ds, table, schema, csv_file, pq_file)
         mensagem = (f"  {table:8} CSV {row['csv_mb']:>9.2f} MB -> Parquet {row['parquet_mb']:>8.2f} MB"
