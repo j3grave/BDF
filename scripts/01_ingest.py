@@ -29,7 +29,7 @@ import zipfile
 import certifi
 import duckdb
 
-from common import SCHEMAS, duckdb_columns, load_config, parse_args
+from common import SCHEMAS, duckdb_columns, load_config
 
 # Codificação de cada ficheiro .dat do 1M - movies.dat tem títulos com acentos em latin-1
 DAT_ENCODING = {"ratings": "utf-8", "movies": "latin-1"}
@@ -97,8 +97,7 @@ def normalize_dat(src, csv_dir):
 
 def main():
     """Descarrega, extrai, normaliza e mostra o n.º de linhas de cada CSV."""
-    args = parse_args(__doc__)
-    cfg = load_config(args.dataset)
+    cfg = load_config()
     paths = cfg["paths"]
     source = cfg["source"]
     print(f"[ingest] dataset={cfg['dataset']}")

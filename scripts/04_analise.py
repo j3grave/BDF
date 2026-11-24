@@ -2,16 +2,14 @@
 04_analise.py - Passo analise do pipeline: análise dos dados do MovieLens.
 
 Objetivo:
-    Responder à pergunta "o que nos dizem os dados", em três partes:
+    Responder à pergunta "o que nos dizem os dados", em duas partes:
       1. Análise exploratória (EDA): 
         (1.1) indicadores;
         (1.2) qualidade das tabelas
         (1.3) 10 figuras sobre a distribuição das notas, a atividade dos utilizadores, a popularidade dos filmes, o
          tempo, os géneros e as tags.
-      2. Análises de sql/analise/ - 16 queries (qualidade, integridade, evolução no tempo, filmes, uso da escala e deteção de utilizadores suspeitos), com verificações.
-      3. Coordenação entre contas (identificação de bots ou atividades suspetas na nos ratings): 
-        (3.1) procura grupos de contas que dão a mesma nota extrema ao mesmo filme na mesma hora e compara-os com uma linha de base em que os timestamps são baralhados dentro de cada filme.
-      4. Todas as agregações são feitas no DuckDB e só os resultados agregados passam para Python, por isso o mesmo script corre no small, no 1M e no 32M sem carregar os dados em memória.
+      2. Análises de sql/analise/ - 17 queries (qualidade, integridade, evolução no tempo, filmes, uso da escala, registo e deteção de utilizadores suspeitos), com verificações.
+      Todas as agregações são feitas no DuckDB e só os resultados agregados passam para Python, por isso o mesmo script corre no small, no 1M e no 32M sem carregar os dados em memória.
 
     Verificações que fazem o script falhar (parte 2):
     - qualidade: 0 linhas com nulos e 0 valores fora da escala (no 1M, também só inteiros 1-5);
@@ -22,9 +20,7 @@ Objetivo:
 
 Entradas:
     data/<dataset>/parquet/<tabela>.parquet   Parquet sem partição (do 02_to_parquet.py)
-    data/<dataset>/csv/<tabela>.csv           com --fonte csv
     sql/analise/*.sql                         queries da parte 2 (${ratings}, ${movies}, ${flag_bots})
-    sql/athena/analise/*.sql                  versões Athena (só com --emular-athena)
 
 Saídas:
     results/<dataset>/eda/
@@ -37,24 +33,12 @@ Saídas:
         10_flag_bots_referencia.csv só no small: os 5 utilizadores de referência
         analises_resumo.csv         n.º de linhas e tempo de cada query
         analises_relatorio.md       fontes, verificações e resumo
-        athena_emulado/             com --emular-athena: versões Athena emuladas e comparação
-    results/<dataset>/bots_coordenacao/  (só com --coordenacao)
-        rajadas.csv, rajadas_por_ano.csv, linha_base.csv, teste.csv,
-        top10_rajadas.csv, top10_contas.csv, verificacao_permutacao.csv
-        coordenacao_relatorio.md
 
 Notas:
     - As ligações ao DuckDB ficam em UTC; os anos, as horas e os dias vêm de epoch_ms (sem fuso), por isso nenhum resultado depende da máquina;
-    - ${flag_bots} é a tabela por utilizador de 10_flag_bots.sql. O script corre essa query primeiro e guarda-a numa tabela temporária; no Athena é um CTAS em Parquet;
-    - A emulação do Athena valida a lógica e os resultados das versões Athena (com divisão inteira entre inteiros, como no Trino, e macros para from_unixtime, date_format, sequence e approx_percentile). Não valida a sintaxe do Trino: isso só na AWS;
-    - Coordenação: a permutação ordena as avaliações de cada filme por hash(userId, movieId, semente), com uma semente por repetição (1..R), e dá-lhes os timestamps desse filme por ordem. É reprodutível com várias threads. Usa memory_limit (--memoria) e uma pasta temporária em data/<dataset>/duckdb_tmp/, apagada no fim.
+    - ${flag_bots} é a tabela por utilizador de 10_flag_bots.sql. O script corre essa query primeiro e guarda-a numa tabela temporária.
 """
-import argparse
-import math
-import re
-import shutil
 import time
-from pathlib import Path
 from string import Template
 
 import duckdb
@@ -69,7 +53,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
 
-from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config  # noqa: E402
+from common import ROOT, load_config  # noqa: E402
 
 
 # ===========================================================================
@@ -157,57 +141,27 @@ def num(x, casas=0):
 TABELAS = ["ratings", "movies", "tags", "links"]
 
 
-def localizar(base, dataset, tabela, fonte):
-    """Devolve (caminho, tipo) do ficheiro de uma tabela, ou None se não existir.
-
-    Prefere o Parquet sem partição; usa o CSV se não houver Parquet (ou se fonte='csv').
-    """
-    pasta_pq = base / "data" / dataset / "parquet"
-    pasta_csv = base / "data" / dataset / "csv"
-
-    # Lista de candidatos por ordem de preferência; fica o primeiro que existir
-    candidatos = []
-    if fonte in ("auto", "parquet"):
-        candidatos.append((pasta_pq / f"{tabela}.parquet", "parquet"))
-        # Alternativa para nomes diferentes (ex.: ratings_v2.parquet). Só ficheiros - a pasta ratings_by_year/ (Parquet particionado) não é considerada.
-        for p in sorted(pasta_pq.glob(f"{tabela}*.parquet")):
-            if p.is_file():
-                candidatos.append((p, "parquet"))
-    if fonte in ("auto", "csv"):
-        candidatos.append((pasta_csv / f"{tabela}.csv", "csv"))
-
-    for caminho, tipo in candidatos:
-        if caminho.exists() and caminho.is_file():
-            return str(caminho), tipo
-    return None
-
-
-def ligar_eda(base, dataset, fonte):
+def ligar_eda(base, dataset):
     """Cria uma ligação DuckDB com uma view por tabela encontrada. Devolve (ligação, origem)."""
     con = duckdb.connect()
     # Fuso fixo em UTC: funções como to_timestamp devolvem TIMESTAMP WITH TIME ZONE e o anoou o mês dependeriam do fuso da máquina. Este script usa epoch_ms (sem fuso), mas assim nenhuma query futura fica dependente do sítio onde corre.
     con.execute("SET TimeZone = 'UTC'")
     origem = {}
     for t in TABELAS:
-        loc = localizar(base, dataset, t, fonte)
-        if loc is None:
+        caminho = base / "data" / dataset / "parquet" / f"{t}.parquet"
+        if not caminho.exists():
             continue   # ex.: o 1M não tem tags nem links
-        caminho, tipo = loc
 
         # Uma VIEW não copia dados: guarda só a query. Cada vez que se consulta "ratings",
-        # o DuckDB lê o ficheiro e, no Parquet, só as colunas que a query usa.
-        if tipo == "parquet":
-            leitor = "read_parquet"
-        else:
-            leitor = "read_csv_auto"
-        con.execute(f"CREATE VIEW {t} AS SELECT * FROM {leitor}('{caminho}')")
+        # o DuckDB lê o ficheiro e só as colunas que a query usa.
+        con.execute(f"CREATE VIEW {t} AS SELECT * FROM read_parquet('{caminho.as_posix()}')")
 
         # Caminho relativo à raiz do projeto: o relatório é versionado e não deve expor pastas locais
-        origem[t] = f"{tipo}: {Path(caminho).relative_to(base).as_posix()}"
+        origem[t] = f"parquet: {caminho.relative_to(base).as_posix()}"
 
     if "ratings" not in origem or "movies" not in origem:
         raise SystemExit(
-            f"Não encontrei ratings e movies em data/{dataset}/parquet nem data/{dataset}/csv. "
+            f"Não encontrei ratings e movies em data/{dataset}/parquet. "
             "Corre primeiro a ingestão e a conversão para Parquet.")
     return con, origem
 
@@ -620,14 +574,14 @@ def relatorio_eda(pasta, ds, origem, resumo, ind, figuras, segundos):
     (pasta / "eda_relatorio.md").write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
-def correr_eda(ds, fonte, resultados):
+def correr_eda(ds, resultados):
     """Liga aos dados, calcula os indicadores, gera as figuras e o relatório da EDA."""
     t0 = time.perf_counter()
     pasta = resultados / ds / "eda"
     pasta.mkdir(parents=True, exist_ok=True)
     aplicar_estilo_nova()
 
-    con, origem = ligar_eda(ROOT, ds, fonte)
+    con, origem = ligar_eda(ROOT, ds)
     print(f"[eda] dataset={ds}")
     for t, o in origem.items():
         print(f"  {t:8s} {o}")
@@ -678,35 +632,25 @@ def correr_eda(ds, fonte, resultados):
 # ===========================================================================
 
 PASTA_SQL = ROOT / 'sql' / 'analise'
-PASTA_SQL_ATHENA = ROOT / 'sql' / 'athena' / 'analise'
 
 # Queries cujo resultado outras queries usam: nome do ficheiro -> nome da tabela temporária.
 # 10_flag_bots corre primeiro (a ordem alfabética já o põe à frente, por começar por um dígito).
 MATERIALIZAR = {'10_flag_bots': 'flag_bots'}
-DEPENDENCIAS = {'eventos': ['10_flag_bots'], '10_flag_bots_calibracao': ['10_flag_bots']}
 
 
 # ---------------------------------------------------------------------------
 # PARTE 2.1Ligação aos dados
 # ---------------------------------------------------------------------------
-def leitor(cfg, tabela, fonte):
-    """Texto SQL que lê uma tabela do dataset no formato pedido (Parquet ou CSV)."""
-    if fonte == 'parquet':
-        caminho = cfg['paths']['parquet'] / f'{tabela}.parquet'
-        texto = f"read_parquet('{caminho.as_posix()}')"
-    else:
-        caminho = cfg['paths']['csv'] / f'{tabela}.csv'
-        # Tipos fixos (common.SCHEMAS) e as mesmas opções do 02_to_parquet.py: os títulos podem
-        # ter aspas escritas como "" (ex.: "11'09""01 - September 11 (2002)")
-        texto = (f"read_csv('{caminho.as_posix()}', header = true, delim = ',', quote = '\"', "
-                 f"escape = '\"', columns = {duckdb_columns(SCHEMAS[tabela])})")
+def leitor(cfg, tabela):
+    """Texto SQL que lê o Parquet de uma tabela do dataset, e a origem para o relatório."""
+    caminho = cfg['paths']['parquet'] / f'{tabela}.parquet'
     if not caminho.exists():
         raise SystemExit(f'Não encontrei {caminho.relative_to(ROOT)}. Corre primeiro a ingestão '
-                         'e a conversão para Parquet (run_pipeline.py --steps ingest parquet).')
-    return texto, f'{fonte}: {caminho.relative_to(ROOT).as_posix()}'
+                         'e a conversão para Parquet.')
+    return f"read_parquet('{caminho.as_posix()}')", f'parquet: {caminho.relative_to(ROOT).as_posix()}'
 
 
-def ligar_analises(cfg, fonte):
+def ligar_analises(cfg):
     """Ligação DuckDB em UTC com as views ratings_base (sem year) e movies. Devolve (ligação, origem)."""
     con = duckdb.connect()
     # Fuso fixo: to_timestamp e afins devolvem TIMESTAMP WITH TIME ZONE, e o ano ou o mês
@@ -714,7 +658,7 @@ def ligar_analises(cfg, fonte):
     con.execute("SET TimeZone = 'UTC'")
     origem = {}
     for tabela, view in (('ratings', 'ratings_base'), ('movies', 'movies')):
-        texto, origem[tabela] = leitor(cfg, tabela, fonte)
+        texto, origem[tabela] = leitor(cfg, tabela)
         con.execute(f'CREATE VIEW {view} AS SELECT * FROM {texto}')
     return con, origem
 
@@ -726,78 +670,9 @@ FONTES_DUCKDB = {
     'flag_bots': 'flag_bots',
 }
 
-# Na emulação do Athena, ${ratings} é escrito como no 08_athena_benchmark.py para as tabelas sem
-# partição: year a partir de from_unixtime (UTC no Trino; aqui, a macro abaixo).
-FONTES_ATHENA = {
-    'ratings': '(SELECT x.*, year(from_unixtime(x."timestamp")) AS year FROM ratings_base AS x)',
-    'movies': 'movies',
-    'flag_bots': 'flag_bots',
-}
-
-MACROS_ATHENA = [
-    # Trino: from_unixtime(bigint) devolve timestamp em UTC. make_timestamp (microssegundos)
-    # devolve TIMESTAMP sem fuso, por isso também não depende do fuso da sessão.
-    'CREATE OR REPLACE MACRO from_unixtime(x) AS make_timestamp(CAST(x AS BIGINT) * 1000000)',
-    'CREATE OR REPLACE MACRO date_format(t, f) AS strftime(t, f)',
-    'CREATE OR REPLACE MACRO sequence(a, b) AS range(a, b + 1)',
-    # approx_percentile do Trino é aproximado; aqui usa-se o quantil exato (diferenças pequenas)
-    'CREATE OR REPLACE MACRO approx_percentile(x, p) AS quantile_cont(x, p)',
-]
-
-
-# Padrões que a emulação não reproduz: no Trino, uma divisão com um literal decimal
-# (100.0 * x / y, x * 1.0 / y) fica com a escala do literal (1 casa decimal), enquanto no DuckDB
-# dá um número real. Nas versões Athena usa-se CAST(... AS double); esta verificação apanha
-# esquecimentos. Apanha "100.0 *" (literal antes da conta) e "* 1.0" (literal depois).
-DECIMAL_EM_CONTA = re.compile(r'(\d+\.\d+\s*[*/])|([*/]\s*\d+\.\d+)')
-
-
-def avisos_trino(texto):
-    """Linhas (sem comentários) de uma query Athena com um literal decimal numa multiplicação ou divisão."""
-    avisos = []
-    for linha in texto.splitlines():
-        codigo = linha.split('--')[0]
-        if DECIMAL_EM_CONTA.search(codigo):
-            avisos.append(codigo.strip())
-    return avisos
-
-
-def preparar_emulacao(con):
-    """Põe a ligação a comportar-se como o Trino onde isso muda resultados."""
-    # No Trino, bigint / bigint é divisão inteira; no DuckDB é real. Com esta opção o DuckDB
-    # faz como o Trino, e um erro desses nas versões Athena aparece na comparação.
-    con.execute('SET integer_division = true')
-    for m in MACROS_ATHENA:
-        con.execute(m)
-
-
 # ---------------------------------------------------------------------------
 # PARTE 2.2 Execução das queries
 # ---------------------------------------------------------------------------
-def listar_queries(pasta, pedidas):
-    """Ficheiros .sql de uma pasta (ordem alfabética), filtrados por --queries com as dependências."""
-    # Dicionário nome -> ficheiro, ex.: {'anual': Path('sql/analise/anual.sql'), ...}
-    ficheiros = {}
-    for f in sorted(pasta.glob('*.sql')):
-        ficheiros[f.stem] = f
-    if not pedidas:
-        return ficheiros   # sem --queries: corre todas
-
-    desconhecidas = [q for q in pedidas if q not in ficheiros]
-    if desconhecidas:
-        raise SystemExit(f'Queries desconhecidas: {desconhecidas}. Existem: {list(ficheiros)}')
-    # Juntamos às queries pedidas aquelas de que dependem (ex.: eventos precisa de 10_flag_bots)
-    nomes = set(pedidas)
-    for q in pedidas:
-        nomes.update(DEPENDENCIAS.get(q, []))
-    # Mantemos só as escolhidas, pela ordem alfabética original
-    escolhidas = {}
-    for nome, ficheiro in ficheiros.items():
-        if nome in nomes:
-            escolhidas[nome] = ficheiro
-    return escolhidas
-
-
 def correr(con, nome, ficheiro, fontes, destino):
     """Corre uma query, grava o resultado em CSV (COPY) e devolve (n.º de linhas, segundos)."""
     sql = Template(ficheiro.read_text(encoding='utf-8')).substitute(fontes).strip().rstrip(';')
@@ -864,7 +739,7 @@ REFERENCIA_BOTS = {
     'small': {
         257: ('sem sinais', '20 avaliações em 11 min no registo: não pode ser sinalizado'),
         7: ('sem sinais', 'uso normal: não pode ser sinalizado'),
-        89: ('suspeito (regra B)', '518 avaliações em 23 min no registo, ~2 s cada: candidato'),
+        89: ('sem sinais', '518 avaliações em 23 min, só no registo: as primeiras 24 h não contam'),
         610: ('suspeito (regra A)', '566 avaliações numa hora, ~4 s cada, ~6 meses depois do registo'),
         534: ('submissão em lote', 'muitas avaliações no mesmo segundo (2016): não é bot'),
     },
@@ -884,17 +759,13 @@ def justificar(r):
     partes = []
     if r.regra_a:
         partes.append(f'regra A: {inteiro(r.max_eventos_10min_apos)} eventos em 10 min depois do registo '
-                      f'(limiar p99,9 = {r.limiar_regra_a:.1f}), mediana de {inteiro(r.mediana_intervalo_apos_s)} s entre eventos')
-    if r.regra_b:
-        partes.append(f'regra B: {r.eventos_registo} eventos nas primeiras 24 h, mediana de '
-                      f'{inteiro(r.mediana_intervalo_registo_s)} s entre eventos (>= 100 e <= 2 s)')
+                      f'(limiar {r.limiar_regra_a}), mediana de {inteiro(r.mediana_intervalo_apos_s)} s entre eventos')
     if r.submissao_lote:
         partes.append(f'submissão em lote: até {r.max_avaliacoes_mesmo_segundo} avaliações no mesmo segundo '
                       f'({r.pct_eventos_lote:.0f}% dos eventos com 2 ou mais), primeiro dia {r.primeiro_dia}')
     if not partes:
         partes.append(f'depois do registo: máx. {inteiro(r.max_eventos_10min_apos)} eventos em 10 min (limiar '
-                      f'{r.limiar_regra_a:.1f}); registo: {r.eventos_registo} eventos, mediana de '
-                      f'{inteiro(r.mediana_intervalo_registo_s)} s (a regra B exige >= 100 eventos e <= 2 s); '
+                      f'{r.limiar_regra_a}); {r.eventos_registo} eventos no registo (não contam); '
                       f'máx. {r.max_avaliacoes_mesmo_segundo} avaliações no mesmo segundo')
     partes.append(f'sinais complementares: {r.sinais_complementares}/3')
     return '; '.join(partes)
@@ -916,28 +787,8 @@ def referencia_bots(pasta, ds):
     return verif
 
 
-def iguais(a, b, tol=1e-6):
-    """Compara dois resultados pela posição das colunas (no Athena os nomes saem em minúsculas)."""
-    if a.shape != b.shape:
-        return False, f'formas diferentes: {a.shape} vs {b.shape}'
-    for j in range(a.shape[1]):
-        x, y = a.iloc[:, j], b.iloc[:, j]
-        if pd.api.types.is_numeric_dtype(x) and pd.api.types.is_numeric_dtype(y):
-            # Números: iguais a menos de uma tolerância (as somas em vírgula flutuante podem
-            # diferir no último dígito). Dois valores em falta contam como iguais.
-            for u, v in zip(x, y):
-                if pd.isna(u) and pd.isna(v):
-                    continue
-                if pd.isna(u) or pd.isna(v) or not math.isclose(u, v, rel_tol=tol, abs_tol=tol):
-                    return False, f'coluna {a.columns[j]}: {u} vs {v}'
-        # Texto (ou tipos diferentes): compara-se o texto de cada valor
-        elif not (x.astype(str).values == y.astype(str).values).all():
-            return False, f'coluna {a.columns[j]} difere'
-    return True, ''
-
-
 # ---------------------------------------------------------------------------
-def relatorio_analises(pasta, ds, origem, resumo, verif, comparacao, segundos):
+def relatorio_analises(pasta, ds, origem, resumo, verif, segundos):
     """Escreve analises_relatorio.md com as fontes, as verificações e o resumo das queries."""
     L = [f'# Análises · MovieLens {ds}', '',
          f'Gerado por `scripts/04_analise.py` em {segundos:.1f} s (sessão DuckDB em UTC).', '',
@@ -950,19 +801,31 @@ def relatorio_analises(pasta, ds, origem, resumo, verif, comparacao, segundos):
     L += ['', '## Queries', '', '| Query | Linhas | Segundos | CSV |', '|---|---:|---:|---|']
     for r in resumo:
         L.append(f"| {r['query']} | {r['linhas']} | {r['segundos']:.3f} | `{r['query']}.csv` |")
+    reg = ler(pasta, 'registo_24h')
+    if reg is not None:
+        g = reg.iloc[0]
+        L += ['', '## Primeiras 24 h de cada utilizador (registo_24h)', '',
+              'Porque é que a regra A ignora as primeiras 24 h: no registo, quase todos avaliam 20 filmes '
+              'em poucos minutos.', '',
+              '| Indicador | Valor |', '|---|---:|',
+              f'| Utilizadores com >= 20 avaliações nas primeiras 24 h | {g.pct_20_nas_24h:.1f}% |',
+              f'| Chegam à 20.ª avaliação em menos de 10 min | {g.pct_20a_em_10min:.1f}% |',
+              f'| Chegam à 20.ª avaliação em menos de 1 h | {g.pct_20a_em_1h:.1f}% |',
+              f'| Tempo mediano até à 20.ª avaliação | {g.mediana_min_ate_20a:.1f} min |',
+              f'| Utilizadores com toda a atividade nas primeiras 24 h (a regra A não os vê) | {g.pct_tudo_nas_24h:.1f}% |']
     flags, calib = ler(pasta, '10_flag_bots'), ler(pasta, '10_flag_bots_calibracao')
     if flags is not None and calib is not None:
         c = calib.iloc[0]
         L += ['', '## Deteção de bots (10_flag_bots)', '',
-              f"- Utilizadores: {int(c.utilizadores)}; suspeitos: {int(c.suspeitos)} ({c.pct_suspeitos:.2f}%) "
-              f"= regra A {int(c.regra_a)} + regra B {int(c.regra_b)} (sem repetir quem tem as duas).",
+              f"- Utilizadores: {int(c.utilizadores)}; suspeitos (regra A, >= 100 eventos em 10 min depois "
+              f"do registo): {int(c.suspeitos)} ({c.pct_suspeitos:.2f}%).",
               f"- Submissão em lote (reportada à parte, não é bot): {int(c.submissao_lote)} utilizadores, "
               f"dos quais {int(c.so_submissao_lote)} sem outra classificação.",
               f"- Ritmo sustentado depois do registo (máx. de eventos em 10 min), "
               f"{int(c.utilizadores_com_atividade_apos_registo)} utilizadores: p50 {c.p50:.1f}, p90 {c.p90:.1f}, "
-              f"p99 {c.p99:.1f}, p99,5 {c.p99_5:.1f}, p99,9 {c.p99_9:.1f}, máximo {c.maximo:.0f}.",
-              f"- Sinalizados pela regra A com o limiar no p99 / p99,5 / p99,9: {int(c.sinalizados_a_p99)} / "
-              f"{int(c.sinalizados_a_p99_5)} / {int(c.sinalizados_a_p99_9)} (a query usa o p99,9).", '']
+              f"p99 {c.p99:.1f}, p99,9 {c.p99_9:.1f}, máximo {c.maximo:.0f}.",
+              f"- Sinalizados com o limiar em 50 / 60 / 100 eventos: {int(c.sinalizados_50)} / "
+              f"{int(c.sinalizados_60)} / {int(c.sinalizados_100)} (a regra usa 100).", '']
         lote = flags[flags.submissao_lote]
         if len(lote):
             # Década do primeiro rating: '2016-03-01'[:3] = '201' -> '2010s'
@@ -970,7 +833,7 @@ def relatorio_analises(pasta, ds, origem, resumo, verif, comparacao, segundos):
             L.append('Submissão em lote por década do primeiro rating: '
                      + ', '.join(f'{d}: {n}' for d, n in decadas.items()) + '.')
             L.append('')
-        susp = flags[flags.regra_a | flags.regra_b]
+        susp = flags[flags.regra_a]
         if len(susp):
             L += ['| userId | Classificação | Justificação |', '|---|---|---|']
             for r in susp.itertuples():
@@ -981,664 +844,46 @@ def relatorio_analises(pasta, ds, origem, resumo, verif, comparacao, segundos):
                   '| userId | Caso | Esperado | Obtido | OK | Justificação |', '|---|---|---|---|---|---|']
             for r in ref.itertuples():
                 L.append(f'| {r.userId} | {r.caso} | {r.esperado} | {r.obtido} | {r.ok} | {r.justificacao} |')
-    if comparacao:
-        L += ['', '## Versões Athena emuladas no DuckDB', '',
-              'Emulação: divisão inteira entre inteiros e macros para `from_unixtime`, `date_format`, '
-              '`sequence` e `approx_percentile`. Valida a lógica, não a sintaxe do Trino.', '',
-              '| Query | Linhas DuckDB | Linhas Athena (emul.) | Iguais | Nota |', '|---|---:|---:|---|---|']
-        for c in comparacao:
-            L.append(f"| {c['query']} | {c['linhas_duckdb']} | {c['linhas_athena']} | {c['iguais']} | {c['nota']} |")
     (pasta / 'analises_relatorio.md').write_text('\n'.join(L) + '\n', encoding='utf-8')
 
 
-def correr_analises(cfg, args):
+def correr_analises(cfg):
     """Corre as queries de sql/analise/, verifica os resultados e escreve o relatório."""
     ds = cfg['dataset']
     pasta = cfg['paths']['results'] / ds / 'analises'
     pasta.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
 
-    # 1. Queries DuckDB: cada uma grava o seu CSV
-    con, origem = ligar_analises(cfg, args.fonte)
-    print(f'[analises] dataset={ds} fonte={args.fonte}')
+    # 1. Queries: cada uma grava o seu CSV, por ordem alfabética
+    con, origem = ligar_analises(cfg)
+    print(f'[analises] dataset={ds}')
     resumo = []
-    for nome, ficheiro in listar_queries(PASTA_SQL, args.queries).items():
+    for ficheiro in sorted(PASTA_SQL.glob('*.sql')):
+        nome = ficheiro.stem
         linhas, seg = correr(con, nome, ficheiro, FONTES_DUCKDB, pasta / f'{nome}.csv')
-        resumo.append({'query': nome, 'linhas': linhas, 'segundos': round(seg, 4), 'fonte': args.fonte})
+        resumo.append({'query': nome, 'linhas': linhas, 'segundos': round(seg, 4)})
         print(f'  {nome:24} {seg * 1000:9.1f} ms  {linhas:>9,} linhas'.replace(',', ' '))
     con.close()
     pd.DataFrame(resumo).to_csv(pasta / 'analises_resumo.csv', index=False)
 
-    # 2. (Opcional) Versões Athena emuladas: correm numa ligação nova "à Trino" e cada
-    #    resultado é comparado com o da versão DuckDB da mesma query
-    comparacao = []
-    if args.emular_athena:
-        destino = pasta / 'athena_emulado'
-        destino.mkdir(exist_ok=True)
-        con, _ = ligar_analises(cfg, args.fonte)
-        preparar_emulacao(con)
-        print('[analises] versões Athena emuladas no DuckDB')
-        for nome, ficheiro in listar_queries(PASTA_SQL_ATHENA, args.queries).items():
-            linhas, seg = correr(con, nome, ficheiro, FONTES_ATHENA, destino / f'{nome}.csv')
-            a = ler(pasta, nome)
-            b = ler(destino, nome)
-            if a is None:
-                ok, nota = False, 'sem versão DuckDB'
-            else:
-                ok, nota = iguais(a, b)
-            avisos = avisos_trino(ficheiro.read_text(encoding='utf-8'))
-            if avisos:
-                ok, nota = False, f'literal decimal numa conta (escala no Trino): {avisos[0]}'
-
-            comparacao.append({'query': nome, 'linhas_duckdb': None if a is None else len(a),
-                               'linhas_athena': linhas, 'iguais': 'sim' if ok else 'NÃO', 'nota': nota})
-            print(f"  {nome:24} {linhas:>9,} linhas  iguais: {'sim' if ok else 'NÃO ' + nota}".replace(',', ' '))
-        con.close()
-        pd.DataFrame(comparacao).to_csv(destino / 'comparacao.csv', index=False)
-
-    # 3. Verificações, relatório e, se alguma falhar, erro (o pipeline pára)
+    # 2. Verificações, relatório e, se alguma falhar, erro (o pipeline pára)
     verif = verificar(pasta, ds) + referencia_bots(pasta, ds)
     segundos = time.perf_counter() - t0
-    relatorio_analises(pasta, ds, origem, resumo, verif, comparacao, segundos)
+    relatorio_analises(pasta, ds, origem, resumo, verif, segundos)
     for nome, valor, ok in verif:
         print(f"  [{'ok' if ok else 'FALHA'}] {nome}: {valor}")
     print(f'[analises] {len(resumo)} queries em {pasta.relative_to(ROOT)} ({segundos:.1f} s)')
 
     falhas = [v for v in verif if not v[2]]
-    diferentes = [c for c in comparacao if c['iguais'] != 'sim']
-    if falhas or diferentes:
-        raise SystemExit(f'[analises] {len(falhas)} verificações falharam e {len(diferentes)} versões '
-                         'Athena emuladas diferem (ver analises_relatorio.md)')
-
-# ===========================================================================
-# Parte 3: coordenação entre contas - Identificação de BOTS
-#
-# Deverá identificar poucos porque quando o movilens foi criado um utilizador ao registar-se tinha de avaliar pelnos 20 filmes e o carregamento era feito por bacth, quando submetia as avaliações, o que pode parecer "rajadas", s\ao na realidade ações normais.
-# ===========================================================================
-
-# ---------------------------------------------------------------------------
-# PARTE 3.1 - Parâmetros do teste
-# ---------------------------------------------------------------------------
-
-# Lados: para cada dataset, o nome de cada grupo de notas extremas e a condição SQL que o define.
-# O 1M só tem notas inteiras (1 a 5); o small e o 32M têm meias estrelas (0,5 a 5,0).
-LADOS = {
-    '1m':    {'1': 'rating = 1', '5': 'rating = 5'},
-    'small': {'0.5': 'rating = 0.5', '<=1.0': 'rating <= 1.0', '5.0': 'rating = 5.0'},
-    '32m':   {'0.5': 'rating = 0.5', '<=1.0': 'rating <= 1.0', '5.0': 'rating = 5.0'},
-}
-
-# Comparações: (análise, rótulo das notas, lados que entram). Cada lado conta uma vez.
-# A análise "principal" usa os lados mais extremos; a de "sensibilidade" junta 0,5 e 1,0.
-COMPARACOES = {
-    '1m': [('principal', '1', ['1']), ('principal', '5', ['5']), ('principal', '1 e 5', ['1', '5'])],
-    '32m': [('principal', '0.5', ['0.5']), ('principal', '5.0', ['5.0']),
-            ('principal', '0.5 e 5.0', ['0.5', '5.0']),
-            ('sensibilidade', '<=1.0', ['<=1.0']), ('sensibilidade', '<=1.0 e 5.0', ['<=1.0', '5.0'])],
-}
-COMPARACOES['small'] = COMPARACOES['32m']   # o small tem a mesma escala do 32M
-
-LIMIARES_UTILIZADORES = (3, 5, 10, 20)   # U: n.º mínimo de utilizadores distintos numa rajada
-LIMIARES_DESVIO = (1.5, 2.0)             # D: distância mínima entre a nota e a média do filme
-ALFA = 0.05                              # nível de significância, antes da correção de Bonferroni
-TOP = 10                                 # n.º de rajadas reais que são analisadas conta a conta
-AMOSTRA_JACCARD = 1000                   # contas ao acaso para o Jaccard de referência entre pares quaisquer
-
-# Colunas que identificam uma comparação (usadas para juntar o real com a linha de base)
-CHAVE = ['analise', 'notas', 'min_utilizadores', 'min_desvio']
-
-
-# ---------------------------------------------------------------------------
-# PARTE 3.2 - Dados e consultas no DuckDB
-# ---------------------------------------------------------------------------
-
-def ligar_coordenacao(cfg, memoria):
-    """Ligação DuckDB em UTC com a tabela r (userId, movieId, rating, ts), a view movies e filme."""
-    con = duckdb.connect()
-    con.execute("SET TimeZone = 'UTC'")
-    # Limite de memória e pasta temporária: se a memória não chegar (32M), o DuckDB escreve
-    # resultados intermédios em disco em vez de falhar.
-    con.execute(f"SET memory_limit = '{memoria}'")
-    tmp = cfg['paths']['base'] / 'duckdb_tmp'
-    con.execute(f"SET temp_directory = '{tmp.as_posix()}'")
-
-    pasta = cfg['paths']['parquet']
-    for t in ('ratings', 'movies'):
-        if not (pasta / f'{t}.parquet').exists():
-            raise SystemExit(f'Não encontrei {(pasta / f"{t}.parquet").relative_to(ROOT)}. '
-                             'Corre primeiro run_pipeline.py --steps ingest parquet.')
-
-    # Carregamos os ratings para uma tabela em memória (r), porque vão ser lidos muitas vezes
-    # (uma por permutação). Só as 4 colunas de que precisamos; timestamp passa a chamar-se ts.
-    con.execute(f"""CREATE TABLE r AS
-                    SELECT userId, movieId, rating, timestamp AS ts
-                    FROM read_parquet('{(pasta / 'ratings.parquet').as_posix()}')""")
-    con.execute(f"CREATE VIEW movies AS SELECT * FROM read_parquet('{(pasta / 'movies.parquet').as_posix()}')")
-
-    # Média e "estreia" (primeira avaliação no dataset) de cada filme: não mudam com a permutação,
-    # por isso calculam-se uma só vez.
-    con.execute("""CREATE TABLE filme AS
-                   SELECT movieId, AVG(rating) AS media_filme, COUNT(*) AS avaliacoes_filme,
-                          MIN(ts) AS estreia_ts
-                   FROM r GROUP BY movieId""")
-    return con, tmp
-
-
-def sql_rajadas(tabela, lados):
-    """SQL das rajadas: grupos (filme, lado, hora) com >= 3 utilizadores a >= 1,5 da média.
-
-    Usa os limiares mínimos (U = 3 e D = 1,5); os mais exigentes filtram-se depois em Python.
-    u_15 e u_2: n.º de utilizadores distintos do grupo a >= 1,5 e a >= 2 da média do filme.
-    """
-    # Uma subquery por lado (ex.: nota 0,5 e nota 5,0), juntas com UNION ALL
-    partes = []
-    for nome, cond in lados.items():
-        partes.append(f"""SELECT t.userId, t.movieId, t.rating, t.ts, '{nome}' AS lado,
-                                 abs(t.rating - f.media_filme) AS desvio, f.media_filme
-                          FROM {tabela} t JOIN filme f USING (movieId)
-                          WHERE t.{cond} AND abs(t.rating - f.media_filme) >= {min(LIMIARES_DESVIO)}""")
-    extremas = ' UNION ALL '.join(partes)
-
-    # ts // 3600 é a hora de relógio (divisão inteira dos segundos por 3600)
-    return f"""
-        WITH ext AS ({extremas})
-        SELECT movieId, lado, ts // 3600 AS hora,
-               COUNT(DISTINCT userId)                                AS u_15,
-               COUNT(DISTINCT userId) FILTER (WHERE desvio >= 2)     AS u_2,
-               MIN(rating) AS nota_min, MAX(rating) AS nota_max,
-               MAX(desvio) AS desvio_max, MAX(media_filme) AS media_filme
-        FROM ext
-        GROUP BY movieId, lado, ts // 3600
-        HAVING COUNT(DISTINCT userId) >= {min(LIMIARES_UTILIZADORES)}"""
-
-
-def contar(df, comparacoes):
-    """N.º de rajadas por comparação (análise, notas, U, D), a partir do resultado de sql_rajadas."""
-    linhas = []
-    for analise, notas, lados in comparacoes:
-        sub = df[df.lado.isin(lados)]          # só as rajadas dos lados desta comparação
-        for u in LIMIARES_UTILIZADORES:
-            for d in LIMIARES_DESVIO:
-                # Com D = 1,5 conta-se u_15; com D = 2 conta-se u_2
-                if d == 1.5:
-                    col = sub.u_15
-                else:
-                    col = sub.u_2
-                linhas.append({'analise': analise, 'notas': notas, 'min_utilizadores': u,
-                               'min_desvio': d, 'rajadas': int((col >= u).sum())})
-    return pd.DataFrame(linhas)
-
-
-def por_ano(df, lados):
-    """Rajadas por ano (U >= 3, D >= 1,5) nos lados indicados. Devolve uma Series ano -> n.º."""
-    sub = df[df.lado.isin(lados)]
-    # hora * 3600 volta a dar segundos; pd.to_datetime(..., unit='s') converte em data (UTC)
-    return pd.to_datetime(sub.hora * 3600, unit='s').dt.year.value_counts()
-
-
-def permutar(con, semente):
-    """Cria a tabela p: cada avaliação do filme recebe um dos timestamps desse filme, baralhados.
-
-    a: avaliações do filme por ordem de hash(userId, movieId, semente) -> posição rn;
-    b: timestamps do filme por ordem cronológica -> posição rn;
-    a avaliação na posição k recebe o k-ésimo timestamp. O conjunto de timestamps do filme
-    fica igual; muda qual o utilizador (e a nota) que fica em cada momento.
-    """
-    con.execute(f"""
-        CREATE OR REPLACE TABLE p AS
-        WITH a AS (SELECT userId, movieId, rating,
-                          row_number() OVER (PARTITION BY movieId
-                                             ORDER BY hash(userId, movieId, {semente}), userId) AS rn
-                   FROM r),
-             b AS (SELECT movieId, ts,
-                          row_number() OVER (PARTITION BY movieId ORDER BY ts, userId) AS rn
-                   FROM r)
-        SELECT a.userId, a.movieId, a.rating, b.ts
-        FROM a JOIN b USING (movieId, rn)""")
-
-
-def verificar_permutacao(con):
-    """Verifica que a permutação está correta e devolve (resumo, exemplo).
-
-    Em todos os filmes, p tem de ter as mesmas avaliações (utilizador, nota) e o mesmo conjunto
-    de timestamps que r, e os timestamps têm de ter mudado de avaliação.
-    """
-    # Compara r e p filme a filme. Somar o hash de cada valor é uma forma rápida de comparar
-    # dois conjuntos: se tiverem os mesmos elementos, a soma é igual (seja qual for a ordem).
-    v = con.execute("""
-        WITH a AS (SELECT movieId, COUNT(*) AS n, SUM(hash(ts)) AS h_ts, MIN(ts) AS mn, MAX(ts) AS mx,
-                          SUM(hash(userId, rating)) AS h_av FROM r GROUP BY movieId),
-             b AS (SELECT movieId, COUNT(*) AS n, SUM(hash(ts)) AS h_ts, MIN(ts) AS mn, MAX(ts) AS mx,
-                          SUM(hash(userId, rating)) AS h_av FROM p GROUP BY movieId)
-        SELECT COUNT(*) AS filmes,
-               count_if(a.n <> b.n OR a.h_ts <> b.h_ts OR a.mn <> b.mn OR a.mx <> b.mx) AS filmes_ts_diferentes,
-               count_if(a.h_av <> b.h_av) AS filmes_avaliacoes_diferentes
-        FROM a FULL JOIN b USING (movieId)""").fetchone()
-
-    # Quantas avaliações mudaram de timestamp e de hora com a permutação
-    mudou = con.execute("""
-        SELECT COUNT(*), count_if(r.ts <> p.ts),
-               count_if(r.ts // 3600 <> p.ts // 3600)
-        FROM r JOIN p USING (userId, movieId)""").fetchone()
-    n_r = con.execute('SELECT COUNT(*) FROM r').fetchone()[0]
-
-    resumo = {'filmes': v[0], 'filmes_ts_diferentes': v[1], 'filmes_avaliacoes_diferentes': v[2],
-              'avaliacoes': n_r, 'pares_juntos': mudou[0], 'ts_mudou': mudou[1], 'hora_mudou': mudou[2]}
-    if v[1] or v[2] or mudou[0] != n_r:
-        raise SystemExit(f'Permutação inválida: {resumo}')
-
-    # Exemplo para o relatório: o filme com 6 avaliações e menor movieId, antes e depois
-    exemplo = con.execute("""
-        WITH f AS (SELECT MIN(movieId) AS movieId FROM filme WHERE avaliacoes_filme = 6)
-        SELECT r.movieId, r.userId, r.rating,
-               strftime(epoch_ms(r.ts * 1000), '%Y-%m-%d %H:%M:%S') AS ts_original,
-               strftime(epoch_ms(p.ts * 1000), '%Y-%m-%d %H:%M:%S') AS ts_permutado
-        FROM r JOIN f USING (movieId) JOIN p USING (userId, movieId)
-        ORDER BY r.ts, r.userId""").df()
-    return resumo, exemplo
-
-
-def caracterizar(con, top):
-    """Uma linha por conta de cada rajada do top, e o Jaccard entre as contas de cada rajada."""
-    con.register('top_df', top[['rajada', 'movieId', 'lado_cond', 'hora']])
-
-    # Membros de cada rajada: as contas que deram a nota extrema ao filme naquela hora.
-    # "baixo" é a nota mínima da escala (0,5 ou 1) e "alto" a máxima (5).
-    membros_sql = """SELECT DISTINCT t.rajada, r.userId, r.ts
-                     FROM top_df t JOIN r ON r.movieId = t.movieId AND r.ts // 3600 = t.hora
-                     JOIN filme f ON f.movieId = r.movieId
-                     WHERE ((t.lado_cond = 'baixo' AND r.rating = (SELECT MIN(rating) FROM r))
-                         OR (t.lado_cond = 'alto' AND r.rating = (SELECT MAX(rating) FROM r)))
-                       AND abs(r.rating - f.media_filme) >= 1.5"""
-
-    # Para cada conta: antiguidade no momento da rajada, se estava no registo (primeiras 24 h),
-    # quantas avaliações fez depois e se voltou a avaliar mais de 24 h depois.
-    contas = con.execute(f"""
-        WITH membros AS ({membros_sql}),
-             u AS (SELECT userId, COUNT(*) AS avaliacoes_conta, MIN(ts) AS primeiro_ts, MAX(ts) AS ultimo_ts
-                   FROM r WHERE userId IN (SELECT userId FROM membros) GROUP BY userId),
-             depois AS (SELECT m.rajada, m.userId, COUNT(x.ts) AS avaliacoes_depois
-                        FROM membros m LEFT JOIN r x ON x.userId = m.userId AND x.ts > m.ts
-                        GROUP BY m.rajada, m.userId)
-        SELECT m.rajada, m.userId,
-               strftime(epoch_ms(m.ts * 1000), '%Y-%m-%d %H:%M:%S')     AS momento,
-               u.avaliacoes_conta,
-               strftime(epoch_ms(u.primeiro_ts * 1000), '%Y-%m-%d')     AS primeiro_dia,
-               ROUND((m.ts - u.primeiro_ts) / 86400.0, 2)               AS antiguidade_dias,
-               m.ts - u.primeiro_ts < 86400                             AS no_registo,
-               d.avaliacoes_depois,
-               ROUND((u.ultimo_ts - m.ts) / 86400.0, 2)                 AS dias_ate_ultima,
-               u.ultimo_ts - m.ts > 86400                               AS voltou_depois_24h
-        FROM membros m JOIN u USING (userId) JOIN depois d USING (rajada, userId)
-        ORDER BY m.rajada, m.ts, m.userId""").df()
-
-    # Jaccard entre duas contas = filmes em comum / filmes avaliados por pelo menos uma das duas.
-    # Perto de 1: as contas avaliaram quase os mesmos filmes (sinal de coordenação).
-    jac = con.execute(f"""
-        WITH membros AS (SELECT DISTINCT rajada, userId FROM ({membros_sql})),
-             ru AS (SELECT userId, movieId FROM r WHERE userId IN (SELECT userId FROM membros)),
-             n AS (SELECT userId, COUNT(*) AS n FROM ru GROUP BY userId),
-             pares AS (SELECT a.rajada, a.userId AS u1, b.userId AS u2
-                       FROM membros a JOIN membros b ON a.rajada = b.rajada AND a.userId < b.userId),
-             comuns AS (SELECT p.rajada, p.u1, p.u2, COUNT(*) AS comuns
-                        FROM pares p JOIN ru x ON x.userId = p.u1 JOIN ru y ON y.userId = p.u2 AND y.movieId = x.movieId
-                        GROUP BY p.rajada, p.u1, p.u2)
-        SELECT p.rajada,
-               AVG(COALESCE(c.comuns, 0) / (n1.n + n2.n - COALESCE(c.comuns, 0)))  AS jaccard_medio,
-               MAX(COALESCE(c.comuns, 0) / (n1.n + n2.n - COALESCE(c.comuns, 0)))  AS jaccard_max
-        FROM pares p
-        LEFT JOIN comuns c USING (rajada, u1, u2)
-        JOIN n n1 ON n1.userId = p.u1 JOIN n n2 ON n2.userId = p.u2
-        GROUP BY p.rajada""").df()
-    return contas, jac
-
-
-def jaccard_referencia(con):
-    """Jaccard médio e p95 entre pares de contas quaisquer (amostra fixa de contas), para comparação."""
-    # A amostra é "ao acaso" mas reprodutível: ordenar por hash(userId, 42) dá sempre as mesmas contas.
-    return con.execute(f"""
-        WITH amostra AS (SELECT userId FROM (SELECT DISTINCT userId FROM r)
-                         ORDER BY hash(userId, 42) LIMIT {AMOSTRA_JACCARD}),
-             ra AS (SELECT r.userId, r.movieId FROM r JOIN amostra USING (userId)),
-             n AS (SELECT userId, COUNT(*) AS n FROM ra GROUP BY userId),
-             comuns AS (SELECT x.userId AS u1, y.userId AS u2, COUNT(*) AS comuns
-                        FROM ra x JOIN ra y ON x.movieId = y.movieId AND x.userId < y.userId
-                        GROUP BY 1, 2),
-             pares AS (SELECT a.userId AS u1, b.userId AS u2, a.n + b.n AS soma
-                       FROM n a JOIN n b ON a.userId < b.userId)
-        SELECT AVG(COALESCE(c.comuns, 0) / (p.soma - COALESCE(c.comuns, 0))),
-               quantile_cont(COALESCE(c.comuns, 0) / (p.soma - COALESCE(c.comuns, 0)), 0.95)
-        FROM pares p LEFT JOIN comuns c USING (u1, u2)""").fetchone()
-
-
-# ---------------------------------------------------------------------------
-# PARTE 3.3 - Passos do main
-# ---------------------------------------------------------------------------
-
-def lados_principais(comparacoes):
-    """Lista dos lados usados na análise principal, sem repetições e pela ordem em que aparecem."""
-    lados = []
-    for analise, notas, lados_comparacao in comparacoes:
-        if analise != 'principal':
-            continue
-        for lado in lados_comparacao:
-            if lado not in lados:
-                lados.append(lado)
-    return lados
-
-
-def linha_de_base(con, lados, comparacoes, principal, repeticoes):
-    """Corre as permutações e conta as rajadas em cada uma.
-
-    Devolve (base, anos_base, tempos, verificacao, exemplo):
-    base       DataFrame com o n.º de rajadas por permutação e por comparação
-    anos_base  lista de Series (uma por permutação) com as rajadas por ano
-    tempos     segundos de cada permutação
-    """
-    base, anos_base, tempos = [], [], []
-    verif = exemplo = None
-    for semente in range(1, repeticoes + 1):
-        tp = time.perf_counter()
-        permutar(con, semente)
-        # A verificação é cara, por isso só se faz na primeira permutação
-        if semente == 1:
-            verif, exemplo = verificar_permutacao(con)
-        pdf = con.execute(sql_rajadas('p', lados)).df()
-        c = contar(pdf, comparacoes)
-        c.insert(0, 'repeticao', semente)
-        base.append(c)
-        anos_base.append(por_ano(pdf, principal).rename(semente))
-        tempos.append(time.perf_counter() - tp)
-        if semente == 1 or semente % 10 == 0:
-            print(f'  permutação {semente}/{repeticoes} ({tempos[-1]:.1f} s)', flush=True)
-    base = pd.concat(base, ignore_index=True)
-    return base, anos_base, tempos, verif, exemplo
-
-
-def teste_permutacao(real, base, repeticoes):
-    """Compara o n.º real de rajadas com a linha de base. Devolve (teste, n.º de comparações, limiar)."""
-    # Estatísticas da linha de base por comparação: média, desvio-padrão, p95 e máximo
-    grupos = base.groupby(CHAVE, sort=False)['rajadas']
-    agg = pd.DataFrame({'media': grupos.mean(),
-                        'desvio_padrao': grupos.std(),
-                        'p95': grupos.quantile(0.95),
-                        'maximo': grupos.max()}).reset_index()
-    real_renomeado = real.rename(columns={'rajadas': 'real'})
-    teste = real_renomeado.merge(agg, on=CHAVE)
-
-    # Quantas permutações tiveram pelo menos tantas rajadas como o real (para o valor-p)
-    juntas = base.merge(real_renomeado, on=CHAVE)
-    juntas['ge'] = juntas['rajadas'] >= juntas['real']
-    ge = juntas.groupby(CHAVE, sort=False)['ge'].sum().rename('perm_ge_real').reset_index()
-    teste = teste.merge(ge, on=CHAVE)
-
-    # Valor-p empírico com a correção "+1" (nunca dá 0) e limiar de Bonferroni
-    m = len(teste)
-    alfa_bonf = ALFA / m
-    teste['valor_p'] = ((1 + teste.perm_ge_real) / (1 + repeticoes)).round(4)
-    # z = quantos desvios-padrão o real está acima da média das permutações.
-    # .where(... > 0) deixa vazio (NaN) quando o desvio-padrão ou a média são 0, para não dividir por 0.
-    teste['z'] = ((teste.real - teste.media) / teste.desvio_padrao.where(teste.desvio_padrao > 0)).round(2)
-    teste['sinal_bonferroni'] = teste.valor_p < alfa_bonf
-    teste['razao_real_media'] = (teste.real / teste.media.where(teste.media > 0)).round(2)
-    for col in ('media', 'desvio_padrao', 'p95'):
-        teste[col] = teste[col].round(2)
-    return teste, m, alfa_bonf
-
-
-def rajadas_por_ano(con, real_df, anos_base, principal):
-    """Rajadas reais por ano, média e p95 nas permutações, e contas novas por ano."""
-    anos = pd.DataFrame({'rajadas_reais': por_ano(real_df, principal)})
-    # Uma coluna por permutação; anos sem rajadas nessa permutação ficam a 0
-    anos_b = pd.concat(anos_base, axis=1).fillna(0)
-    anos = anos.join(pd.DataFrame({'media_permutacoes': anos_b.mean(axis=1).round(2),
-                                   'p95_permutacoes': anos_b.quantile(0.95, axis=1).round(2)}), how='outer')
-
-    # Contas novas: ano da primeira avaliação de cada utilizador
-    primeiras = con.execute("""SELECT year(epoch_ms(MIN(ts) * 1000)) AS ano, COUNT(*) AS n
-                               FROM r GROUP BY userId""").df()
-    novas = primeiras.groupby('ano').size().rename('contas_novas')
-
-    anos = anos.join(novas, how='outer').fillna(0).sort_index()
-    anos.index.name = 'ano'
-    anos = anos.astype({'rajadas_reais': int, 'contas_novas': int}).reset_index()
-    return anos
-
-
-def detalhe_rajadas(con, real_df):
-    """Junta a cada rajada real o título, a estreia do filme e o total de avaliações dessa hora.
-
-    Devolve as rajadas ordenadas da mais forte para a mais fraca (mais utilizadores; desempate
-    pelo desvio) e a lista de colunas que vão para o CSV.
-    """
-    con.register('real_df', real_df)
-    # SEMI JOIN: fica só com as avaliações das (filme, hora) que são rajadas, sem as duplicar
-    rajadas = con.execute("""
-        SELECT d.*, fm.title, fm.avaliacoes_filme, fm.estreia_ts, h.avaliacoes_filme_hora
-        FROM real_df d
-        JOIN (SELECT f.*, m.title FROM filme f JOIN movies m USING (movieId)) fm USING (movieId)
-        JOIN (SELECT r.movieId, r.ts // 3600 AS hora, COUNT(*) AS avaliacoes_filme_hora
-              FROM r SEMI JOIN (SELECT DISTINCT movieId, hora FROM real_df) k
-                   ON r.movieId = k.movieId AND r.ts // 3600 = k.hora
-              GROUP BY 1, 2) h USING (movieId, hora)""").df()
-    rajadas = rajadas.sort_values(['u_15', 'desvio_max', 'movieId', 'hora'],
-                                  ascending=[False, False, True, True]).reset_index(drop=True)
-
-    # Colunas legíveis para o relatório
-    rajadas['inicio_hora_utc'] = pd.to_datetime(rajadas.hora * 3600, unit='s').dt.strftime('%Y-%m-%d %H:00')
-    rajadas['pct_da_hora'] = (100 * rajadas.u_15 / rajadas.avaliacoes_filme_hora).round(1)
-    rajadas['dias_desde_estreia_dataset'] = ((rajadas.hora * 3600 - rajadas.estreia_ts) / 86400).round(2)
-    # Ano no fim do título, ex.: "Toy Story (1995)" -> 1995
-    rajadas['ano_titulo'] = rajadas.title.str.extract(r'\((\d{4})\)\s*$')[0]
-    rajadas['desvio_max'] = rajadas.desvio_max.round(3)
-    rajadas['media_filme'] = rajadas.media_filme.round(3)
-    cols = ['movieId', 'title', 'ano_titulo', 'lado', 'inicio_hora_utc', 'u_15', 'u_2',
-            'avaliacoes_filme_hora', 'pct_da_hora', 'media_filme', 'desvio_max', 'avaliacoes_filme',
-            'dias_desde_estreia_dataset']
-    return rajadas, cols
-
-
-def resumo_por_rajada(contas):
-    """Resumo das contas de cada rajada: antiguidade, registo, atividade e (se houver) suspeitos."""
-    grupos = contas.groupby('rajada')
-    resumo = pd.DataFrame({
-        'antiguidade_mediana_dias': grupos['antiguidade_dias'].median(),
-        'pct_no_registo': (100 * grupos['no_registo'].mean()).round(1),
-        'avaliacoes_conta_mediana': grupos['avaliacoes_conta'].median(),
-        'pct_voltaram_24h': (100 * grupos['voltou_depois_24h'].mean()).round(1),
-    })
-    # Contas classificadas como suspeitas na parte 2 (10_flag_bots.csv)
-    if 'classificacao' in contas:
-        suspeito = contas['classificacao'].fillna('').str.startswith('suspeito')
-        resumo['contas_suspeitas'] = suspeito.groupby(contas['rajada']).sum().astype(int)
-    return resumo.reset_index()
-
-
-def top_rajadas(con, cfg, ds, rajadas, cols, principal, saida):
-    """Caracteriza as TOP rajadas mais fortes da análise principal e grava os CSV do top 10."""
-    top = rajadas[rajadas.lado.isin(principal)].head(TOP).copy()
-    top.insert(0, 'rajada', range(1, len(top) + 1))
-    # lado baixo = nota mínima da escala (0,5 ou 1); alto = 5
-    lado_cond = []
-    for lado in top.lado:
-        if lado in ('5', '5.0'):
-            lado_cond.append('alto')
-        else:
-            lado_cond.append('baixo')
-    top['lado_cond'] = lado_cond
-
-    contas, jac = caracterizar(con, top)
-    # Classificação da deteção de bots (parte 2), se existir
-    bots_csv = cfg['paths']['results'] / ds / 'analises' / '10_flag_bots.csv'
-    if bots_csv.exists():
-        bots = pd.read_csv(bots_csv, usecols=['userId', 'classificacao'])
-        contas = contas.merge(bots, on='userId', how='left')
-    contas.to_csv(saida / 'top10_contas.csv', index=False)
-
-    resumo = resumo_por_rajada(contas)
-    top = top.merge(resumo, on='rajada').merge(jac, on='rajada')
-    top['jaccard_medio'] = top.jaccard_medio.round(3)
-    top['jaccard_max'] = top.jaccard_max.round(3)
-    # A rajada calhou na primeira semana do filme no dataset?
-    top['coincide_estreia_7d'] = top.dias_desde_estreia_dataset.abs() <= 7
-    cols_top = ['rajada'] + cols + list(resumo.columns[1:]) + ['jaccard_medio', 'jaccard_max', 'coincide_estreia_7d']
-    top = top[cols_top]
-    top.to_csv(saida / 'top10_rajadas.csv', index=False)
-    return top
-
-
-def tabela_md(df):
-    """Converte um DataFrame numa tabela em Markdown (valores em falta ficam vazios)."""
-    cols = list(df.columns)
-    linhas = ['| ' + ' | '.join(cols) + ' |', '|' + '---|' * len(cols)]
-    for _, row in df.iterrows():
-        valores = []
-        for v in row:
-            if pd.isna(v):
-                valores.append('')
-            else:
-                valores.append(str(v))
-        linhas.append('| ' + ' | '.join(valores) + ' |')
-    return '\n'.join(linhas)
-
-
-def relatorio_coordenacao(saida, ds, args, lados, tempos, t_carga, segundos, verif, exemplo,
-                       teste, m, alfa_bonf, anos, top, jac_ref):
-    """Escreve coordenacao_relatorio.md com os tempos, a verificação, o teste e o top 10."""
-    R = args.repeticoes
-    p_min = 1 / (1 + R)   # menor valor-p possível com R permutações
-
-    # Textos auxiliares da secção "Definição"
-    lados_txt = []
-    for nome, cond in lados.items():
-        lados_txt.append(f'`{nome}` ({cond})')
-    u_txt = ', '.join(str(u) for u in LIMIARES_UTILIZADORES)
-    d_txt = ', '.join(f'{d:g}' for d in LIMIARES_DESVIO)
-
-    # Aviso quando o n.º de permutações não permite passar Bonferroni
-    aviso_bonferroni = ''
-    if p_min >= alfa_bonf:
-        aviso_bonferroni = (' **Com este n.º de permutações nenhuma comparação pode passar o limiar corrigido**; '
-                            f'seriam precisas pelo menos {int(m / ALFA)} permutações. '
-                            'O z é dado como informação complementar.')
-
-    colunas_top = ['rajada', 'title', 'lado', 'inicio_hora_utc', 'u_15', 'avaliacoes_filme_hora',
-                   'pct_da_hora', 'desvio_max', 'dias_desde_estreia_dataset', 'antiguidade_mediana_dias',
-                   'pct_no_registo', 'avaliacoes_conta_mediana', 'pct_voltaram_24h', 'jaccard_medio',
-                   'jaccard_max']
-    if 'contas_suspeitas' in top:
-        colunas_top.append('contas_suspeitas')
-
-    md = [f'# Coordenação entre contas · MovieLens {ds}', '',
-          f'Gerado por `scripts/04_analise.py` (sessão DuckDB em UTC, memory_limit {args.memoria}, '
-          'fonte Parquet).', '',
-          '## Tempos', '',
-          f'- Total: {segundos:.1f} s ({segundos / 60:.1f} min).',
-          f'- Carga dos dados: {t_carga:.1f} s.',
-          f'- Permutações: {R}, {sum(tempos):.1f} s no total, {sum(tempos) / R:.2f} s em média '
-          f'(a primeira inclui a verificação: {tempos[0]:.1f} s).', '',
-          '## Definição', '',
-          f'Rajada: (filme, lado, hora UTC) com >= U utilizadores distintos cuja nota está no lado e a >= D da '
-          f'média do filme. Lados: {", ".join(lados_txt)}. '
-          f'U em {{{u_txt}}}, D em {{{d_txt}}}.', '',
-          f'Linha de base: {R} permutações dos timestamps dentro de cada filme (sementes 1..{R}).', '',
-          '## Verificação da permutação (semente 1)', '',
-          f'- Filmes: {verif["filmes"]}; com conjunto de timestamps diferente: {verif["filmes_ts_diferentes"]}; '
-          f'com avaliações (utilizador, nota) diferentes: {verif["filmes_avaliacoes_diferentes"]}.',
-          f'- Avaliações: {verif["avaliacoes"]}; com timestamp diferente do original: {verif["ts_mudou"]} '
-          f'({100 * verif["ts_mudou"] / verif["avaliacoes"]:.1f}%); com hora diferente: {verif["hora_mudou"]} '
-          f'({100 * verif["hora_mudou"] / verif["avaliacoes"]:.1f}%).', '',
-          f'Exemplo (filme {exemplo.movieId.iloc[0]}, 6 avaliações):', '',
-          tabela_md(exemplo), '',
-          '## Real vs linha de base', '',
-          f'Comparações: {m}. Bonferroni: limiar {ALFA} / {m} = {alfa_bonf:.5f}. '
-          f'Menor valor-p empírico possível com {R} permutações: 1 / {R + 1} = {p_min:.5f}.'
-          + aviso_bonferroni, '',
-          tabela_md(teste[CHAVE + ['real', 'media', 'desvio_padrao', 'p95', 'maximo', 'razao_real_media',
-                                   'z', 'valor_p', 'sinal_bonferroni']]), '',
-          '## Rajadas por ano (análise principal, U >= 3, D >= 1,5)', '',
-          tabela_md(anos), '',
-          f'## As {TOP} rajadas reais mais fortes (análise principal)', '',
-          tabela_md(top[colunas_top]), '',
-          f'Jaccard de referência entre pares de contas quaisquer ({AMOSTRA_JACCARD} contas ao acaso): '
-          f'média {jac_ref[0]:.3f}, p95 {jac_ref[1]:.3f}.', '']
-    (saida / 'coordenacao_relatorio.md').write_text('\n'.join(md), encoding='utf-8')
-
-
-def correr_coordenacao(cfg, args):
-    """Rajadas reais, linha de base por permutação, teste, top 10 e relatório."""
-    ds = cfg['dataset']
-    lados, comparacoes = LADOS[ds], COMPARACOES[ds]
-    principal = lados_principais(comparacoes)
-    R = args.repeticoes
-    saida = cfg['paths']['results'] / ds / 'bots_coordenacao'
-    saida.mkdir(parents=True, exist_ok=True)
-    t0 = time.perf_counter()
-    con, tmp = ligar_coordenacao(cfg, args.memoria)
-    t_carga = time.perf_counter() - t0
-
-    # 1. Rajadas reais
-    real_df = con.execute(sql_rajadas('r', lados)).df()
-    real = contar(real_df, comparacoes)
-    print(f'[{ds}] rajadas reais (U>=3, D>=1,5, todos os lados): {len(real_df)}')
-
-    # 2. Linha de base: R permutações dos timestamps dentro de cada filme, e o teste
-    base, anos_base, tempos, verif, exemplo = linha_de_base(con, lados, comparacoes, principal, R)
-    teste, m, alfa_bonf = teste_permutacao(real, base, R)
-
-    # 3. Rajadas por ano (análise principal, U >= 3, D >= 1,5) e contas novas por ano
-    anos = rajadas_por_ano(con, real_df, anos_base, principal)
-    anos.to_csv(saida / 'rajadas_por_ano.csv', index=False)
-
-    # 4. Rajadas reais: detalhe e top 10 da análise principal
-    rajadas, cols = detalhe_rajadas(con, real_df)
-    rajadas[cols].to_csv(saida / 'rajadas.csv', index=False)
-    top = top_rajadas(con, cfg, ds, rajadas, cols, principal, saida)
-    jac_ref = jaccard_referencia(con)
-
-    base.to_csv(saida / 'linha_base.csv', index=False)
-    teste.to_csv(saida / 'teste.csv', index=False)
-    exemplo.to_csv(saida / 'verificacao_permutacao.csv', index=False)
-    con.close()
-    shutil.rmtree(tmp, ignore_errors=True)   # apaga a pasta temporária do DuckDB
-
-    # 5. Relatório
-    segundos = time.perf_counter() - t0
-    relatorio_coordenacao(saida, ds, args, lados, tempos, t_carga, segundos, verif, exemplo,
-                       teste, m, alfa_bonf, anos, top, jac_ref)
-    print(f'Gravado em {saida.relative_to(ROOT)} ({segundos:.1f} s)')
-
-
-# ===========================================================================
-# PARTE 4 - Execução
-# ===========================================================================
-
-def parse_args():
-    """Lê as opções da linha de comandos."""
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
-    ap.add_argument('--fonte', default='parquet', choices=['parquet', 'csv'],
-                    help='ler o Parquet (por omissão) ou os CSV normalizados')
-    ap.add_argument('--queries', nargs='+', metavar='NOME',
-                    help='parte 2: correr só estas queries de sql/analise/ (e as de que dependem)')
-    ap.add_argument('--emular-athena', action='store_true',
-                    help='parte 2: corre também as versões de sql/athena/analise/ emuladas no DuckDB e compara')
-    ap.add_argument('--coordenacao', action='store_true',
-                    help='parte 3: corre o teste de coordenação entre contas (cerca de 3 s por permutação no 32M)')
-    ap.add_argument('--repeticoes', type=int, default=20,
-                    help='parte 3: n.º de permutações da linha de base (20 por omissão; 800 para passar Bonferroni)')
-    ap.add_argument('--memoria', default='12GB', help='parte 3: memory_limit do DuckDB (12GB por omissão)')
-    return ap.parse_args()
+    if falhas:
+        raise SystemExit(f'[analises] {len(falhas)} verificações falharam (ver analises_relatorio.md)')
 
 
 def main():
-    """Corre a EDA, as análises e, com --coordenacao, o teste de coordenação."""
-    args = parse_args()
-    cfg = load_config(args.dataset)
-    correr_eda(cfg['dataset'], args.fonte, cfg['paths']['results'])
-    correr_analises(cfg, args)
-    if args.coordenacao:
-        correr_coordenacao(cfg, args)
+    """Corre a EDA e as análises."""
+    cfg = load_config()
+    correr_eda(cfg['dataset'], cfg['paths']['results'])
+    correr_analises(cfg)
 
 
 if __name__ == '__main__':

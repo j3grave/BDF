@@ -3,7 +3,7 @@ athena_common.py - Configuração e funções partilhadas pelos scripts do bloco
 
 Objetivo:
     (1) Reunir num só sítio o que o 07_athena_setup.py e o 08_athena_benchmark.py usam: 
-    (1.1) opções da linha de comandos da AWS (região, buckets);
+    (1.1) configuração da AWS do config.yaml (região, buckets);
     (1.2) leitura dos .sql de sql/athena/
     (1.3) funções DuckDB para inspecionar os ficheiros Parquet (schema, contagem de linhas, compressão, contagem por ano);
     (1.4) uma pequena classe que submete uma query ao Athena, espera que termine e devolve as
@@ -11,9 +11,9 @@ Objetivo:
     (2) Também resolve os nomes dos buckets, são derivados do ID da conta AWS.
 
 Entradas:
-    config.yaml (secção aws) e as opções --region, --bucket-dados, --bucket-resultados, --workgroup.
-    Credenciais AWS: as do ~/.aws/credentials (no AWS Academy Learner Lab, copiadas de
-    "AWS Details"). Nunca ficam no repositório.
+    config.yaml (secção aws).
+    Credenciais AWS: as de .aws/credentials, na pasta do projeto, que o run_pipeline.py pede no
+    terminal (no AWS Academy Learner Lab, copiadas de "AWS Details"). Estão no .gitignore.
 
 Saídas:
     Nenhuma diretamente; é importado pelos outros scripts.
@@ -39,47 +39,23 @@ USD_POR_TB = 5.0        # preço do Athena por TB lido (us-east-1), para estimar
 ERROS_CREDENCIAIS = {'ExpiredTokenException', 'ExpiredToken', 'UnrecognizedClientException',
                      'InvalidClientTokenId', 'InvalidAccessKeyId', 'SignatureDoesNotMatch'}
 
-# Nomes dos buckets quando não vêm da linha de comandos nem do config.yaml (null);
+# Nomes dos buckets quando não vêm do config.yaml (null);
 # O sufixo é o ID da conta (12 dígitos): os nomes de buckets são únicos em toda a AWS, por isso cada um precisa dos seus. O ID só aparece no ecrã, nunca nos ficheiros do repositório.
 PREFIXO_BUCKETS = {'bucket_dados': 'bdf26-g1-dados', 'bucket_resultados': 'bdf26-g1-resultados'}
 
-if platform.system() == 'Darwin':
-    _COLAR = ('   e, no terminal, escrever o bloco no ficheiro das credenciais:\n'
-              '     mkdir -p ~/.aws && pbpaste > ~/.aws/credentials\n')
-else:
-    _COLAR = ('   e colá-lo em ~/.aws/credentials (no Windows: %UserProfile%\\.aws\\credentials),\n'
-              '   substituindo o conteúdo anterior.\n')
 MENSAGEM_CREDENCIAIS = (
     'Erro: as credenciais AWS não existem, expiraram ou são inválidas.\n'
-    'No AWS Academy Learner Lab (as credenciais mudam a cada sessão e duram cerca de 4 horas):\n'
-    '1. "Start Lab" e esperar que o indicador fique verde.\n'
-    '2. "AWS Details" > "AWS CLI: Show" e copiar o bloco [default] (inclui aws_session_token),\n'
-    + _COLAR +
-    '3. Voltar a correr o comando.')
+    'No AWS Academy Learner Lab as credenciais mudam a cada sessão e duram cerca de 4 horas.\n'
+    'Volta a correr python run_pipeline.py: confirma as credenciais e pede as novas, se for preciso.')
 
 
 class AthenaError(Exception):
     """Uma query terminou em FAILED ou CANCELLED."""
 
 
-def add_aws_args(parser):
-    """Acrescenta ao parser as opções comuns aos scripts do Athena."""
-    parser.add_argument('--region', help='região AWS (sobrepõe config.yaml; Learner Lab: us-east-1)')
-    parser.add_argument('--bucket-dados', dest='bucket_dados', help='bucket com data/cloud/<pasta>/')
-    parser.add_argument('--bucket-resultados', dest='bucket_resultados',
-                        help='bucket onde o Athena escreve os resultados das queries')
-    parser.add_argument('--workgroup', help='workgroup do Athena (por omissão: primary)')
-    parser.add_argument('--dry-run', action='store_true',
-                        help='não contacta a AWS: só verifica e mostra o SQL que seria enviado')
-
-
-def aws_settings(cfg, args):
-    """Junta a secção aws do config.yaml com as opções da linha de comandos (que têm prioridade)."""
+def aws_settings(cfg):
+    """Secção aws do config.yaml, com os valores por omissão e os nomes derivados do dataset."""
     aws = dict(cfg.get('aws') or {})
-    for chave in ('region', 'bucket_dados', 'bucket_resultados', 'workgroup'):
-        valor = getattr(args, chave, None)
-        if valor:
-            aws[chave] = valor
     aws['region'] = aws.get('region') or 'us-east-1'
     aws['workgroup'] = aws.get('workgroup') or 'primary'
     # Nomes derivados do dataset: base de dados movielens_32m e prefixo ml-32m/ no bucket
@@ -123,7 +99,7 @@ def account_id(session):
 def resolve_buckets(aws, session=None):
     """Preenche os nomes dos buckets que faltam com os derivados do ID da conta.
 
-    Prioridade: linha de comandos > config.yaml > bdf26-g1-dados-<conta> / bdf26-g1-resultados-<conta>.
+    Prioridade: config.yaml > bdf26-g1-dados-<conta> / bdf26-g1-resultados-<conta>.
     Só contacta a AWS (STS) se faltar algum nome.
     """
     em_falta = [chave for chave in PREFIXO_BUCKETS if not aws.get(chave)]

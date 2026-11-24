@@ -7,7 +7,7 @@
 -- - O catálogo guarda os nomes em minúsculas (userId -> userid). Na leitura de Parquet
 --   a correspondência de nomes não distingue maiúsculas, por isso os ficheiros servem tal como estão.
 -- - timestamp é palavra reservada: no DDL vai entre backticks, nas queries entre aspas duplas.
--- - Tipos iguais aos dos ficheiros (ver reports/cloud_manifest_<dataset>.md).
+-- - Tipos iguais aos dos ficheiros (o 07_athena_setup.py confirma-o antes de criar a tabela).
 --
 -- Parâmetros: ${bucket}, ${pasta}
 CREATE EXTERNAL TABLE IF NOT EXISTS ratings (

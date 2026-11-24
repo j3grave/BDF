@@ -14,20 +14,16 @@
 --    no mesmo segundo. Casos de referência
 --    no small: 191, 429, 99, 163 (anos 90) e 534 (2016).
 -- 3. Regra A - ritmo sustentado não humano, fora do registo:
---    - ignora as primeiras 24 h de cada utilizador (registo);
+--    - ignora as primeiras 24 h de cada utilizador (registo). Nessas 24 h quase todos avaliam
+--      20 ou mais filmes em poucos minutos, porque o site o pede ao criar a conta (ver
+--      registo_24h.sql), por isso um pico aí não distingue um bot de uma pessoa;
 --    - eventos_10min = n.º de eventos na janela [t, t + 599 s] (janela deslizante de 10 min);
---    - regra_a: max_eventos_10min_apos >= limiar_regra_a, em que o limiar é o QUANTIL 99,9%
---      dessa métrica entre os utilizadores com atividade depois do registo (calculado na
---      própria query, por isso adapta-se a cada dataset; não é um valor fixo por minuto).
---      O 10_flag_bots_calibracao.sql mostra a distribuição e os sinalizados no p99, p99,5 e
---      p99,9. O quantil está escrito em limiar_regra_a (abaixo) e é para calibrar no 32M.
+--    - regra_a: max_eventos_10min_apos >= 100, ou seja, um evento a cada 6 s durante 10 min
+--      seguidos. O limiar é fixo, igual nos três datasets; o 10_flag_bots_calibracao.sql
+--      mostra a distribuição e quantos ficariam sinalizados com outros limiares.
 --    Referência: o 610 do small (566 avaliações numa hora, ~4 s cada, quase 6 meses depois
 --    do registo) tem de ser sinalizado.
--- 4. Regra B - registo extremo (só dentro das primeiras 24 h): volume muito alto E ritmo
---    sustentado: >= 100 eventos ("centenas") com intervalo mediano <= 2 s. Os dois valores vêm
---    da definição pedida, não de calibração. Referência: o 89 (518 avaliações em 23 min, ~2 s
---    cada) é candidato; o 257 (20 em 11 min) e o 7 (uso normal) não podem ser sinalizados.
--- 5. Sinais complementares (não classificam sozinhos; contam-se em sinais_complementares):
+-- 4. Sinais complementares (não classificam sozinhos; contam-se em sinais_complementares):
 --    desvio-padrão das notas no 1% mais baixo, % da nota mais frequente no 1% mais alto e %
 --    de eventos em lote (k >= 2) no 1% mais alto, entre todos os utilizadores do dataset.
 --
@@ -38,8 +34,7 @@
 --
 -- Parâmetros: ${ratings}
 WITH lim AS (SELECT 86400 AS registo_s,           -- primeiras 24 h de cada utilizador
-                    100   AS regra_b_min_eventos,  -- "centenas de eventos"
-                    2     AS regra_b_max_mediana_s,
+                    100   AS limiar_regra_a,       -- eventos em 10 min depois do registo
                     10    AS lote_min_avaliacoes), -- avaliações no mesmo segundo
      -- 1. Eventos de submissão
      ev AS (SELECT userId, timestamp AS ts, COUNT(*) AS k
@@ -60,8 +55,6 @@ WITH lim AS (SELECT 86400 AS registo_s,           -- primeiras 24 h de cada util
                             MAX(k)                                            AS max_avaliacoes_mesmo_segundo,
                             100.0 * count_if(k >= 2) / COUNT(*)               AS pct_eventos_lote,
                             count_if(no_registo)                              AS eventos_registo,
-                            MEDIAN(intervalo) FILTER (WHERE no_registo)       AS mediana_intervalo_registo_s,
-                            MAX(eventos_10min) FILTER (WHERE no_registo)      AS max_eventos_10min_registo,
                             count_if(NOT no_registo)                          AS eventos_apos_registo,
                             MEDIAN(intervalo) FILTER (WHERE NOT no_registo)   AS mediana_intervalo_apos_s,
                             MAX(eventos_10min) FILTER (WHERE NOT no_registo)  AS max_eventos_10min_apos,
@@ -79,32 +72,25 @@ WITH lim AS (SELECT 86400 AS registo_s,           -- primeiras 24 h de cada util
               FROM por_eventos e
               JOIN notas n ON e.userId = n.userId
               JOIN modal m ON e.userId = m.userId),
-     -- Limiares calculados a partir da distribuição do próprio dataset
-     limiar_a AS (SELECT quantile_cont(max_eventos_10min_apos, 0.999) AS limiar_regra_a   -- QUANTIL DA REGRA A
-                  FROM base WHERE eventos_apos_registo > 0),
+     -- Limiares dos sinais complementares, calculados a partir da distribuição do próprio dataset
      limiares_c AS (SELECT quantile_cont(desvio_notas, 0.01)     AS limiar_desvio_baixo,
                            quantile_cont(pct_nota_modal, 0.99)   AS limiar_modal_alto,
                            quantile_cont(pct_eventos_lote, 0.99) AS limiar_lote_alto
                     FROM base),
-     f AS (SELECT b.*, a.limiar_regra_a,
-                  COALESCE(b.eventos_apos_registo > 0 AND b.max_eventos_10min_apos >= a.limiar_regra_a, false) AS regra_a,
-                  COALESCE(b.eventos_registo >= l.regra_b_min_eventos
-                           AND b.mediana_intervalo_registo_s <= l.regra_b_max_mediana_s, false)               AS regra_b,
+     f AS (SELECT b.*, l.limiar_regra_a,
+                  COALESCE(b.max_eventos_10min_apos >= l.limiar_regra_a, false)                               AS regra_a,
                   b.max_avaliacoes_mesmo_segundo >= l.lote_min_avaliacoes                                     AS submissao_lote,
                   CASE WHEN b.desvio_notas <= c.limiar_desvio_baixo THEN 1 ELSE 0 END
                     + CASE WHEN b.pct_nota_modal >= c.limiar_modal_alto THEN 1 ELSE 0 END
                     + CASE WHEN b.pct_eventos_lote >= c.limiar_lote_alto THEN 1 ELSE 0 END                    AS sinais_complementares
-           FROM base b CROSS JOIN limiar_a a CROSS JOIN limiares_c c CROSS JOIN lim l)
+           FROM base b CROSS JOIN limiares_c c CROSS JOIN lim l)
 SELECT userId, avaliacoes, eventos,
        strftime(epoch_ms(primeiro_ts * 1000), '%Y-%m-%d') AS primeiro_dia,
        strftime(epoch_ms(ultimo_ts * 1000), '%Y-%m-%d')   AS ultimo_dia,
-       eventos_registo, mediana_intervalo_registo_s, max_eventos_10min_registo,
-       eventos_apos_registo, mediana_intervalo_apos_s, max_eventos_10min_apos, limiar_regra_a,
+       eventos_registo, eventos_apos_registo, mediana_intervalo_apos_s, max_eventos_10min_apos, limiar_regra_a,
        max_avaliacoes_mesmo_segundo, pct_eventos_lote, desvio_notas, pct_nota_modal,
-       regra_a, regra_b, submissao_lote, sinais_complementares,
-       CASE WHEN regra_a AND regra_b THEN 'suspeito (regras A e B)'
-            WHEN regra_a THEN 'suspeito (regra A)'
-            WHEN regra_b THEN 'suspeito (regra B)'
+       regra_a, submissao_lote, sinais_complementares,
+       CASE WHEN regra_a THEN 'suspeito (regra A)'
             WHEN submissao_lote THEN 'submissão em lote'
             ELSE 'sem sinais' END AS classificacao
 FROM f

@@ -5,7 +5,7 @@ Objetivo:
     Correr as mesmas perguntas nos dois motores e sobre os mesmos bytes: 
     (1) o DuckDB lê data/cloud/<pasta>/ no disco local e o Athena lê a cópia exata dessa pasta no S3;
     (2) Cada query que usa ratings corre em três formatos (CSV, Parquet e Parquet particionado por ano - as que só usam movies correm uma vez, em Parquet);
-    (3) Cada combinação corre 3 vezes- pode correr mais vezes se for defiido no inicio deste notebook -  e guarda-se a mediana do tempo; 
+    (3) Cada combinação corre RUNS vezes (3, definido no início deste script) e guarda-se a mediana do tempo; 
     (4) No Athena regista-se também o tempo no motor e os dados lidos (DataScannedInBytes, aquilo que é cobrado),que é a métrica que melhor mostra o efeito do formato colunar e das partições.
 
 Entradas:
@@ -28,7 +28,6 @@ Algumas Notas a COnsiderar:
     (2) O tempo do DuckDB é medido no relógio local, com uma ligação nova em cada corrida, como no 03_benchmark.py.
     (3) A query 03 usa approx_percentile no Athena (não tem MEDIAN exata), por isso a mediana pode diferir ligeiramente; o n.º de linhas tem de ser igual nos dois motores.
 """
-import argparse
 import statistics
 import sys
 import time
@@ -36,9 +35,8 @@ from string import Template
 
 import duckdb
 
-from athena_common import (ATHENA_SQL, USD_POR_TB, Athena, AthenaError, add_aws_args, aws_settings, read_sql,
-                           resolve_buckets)
-from common import DATASETS, ROOT, SCHEMAS, append_row, duckdb_columns, load_config, now
+from athena_common import ATHENA_SQL, USD_POR_TB, Athena, AthenaError, aws_settings, read_sql, resolve_buckets
+from common import ROOT, SCHEMAS, append_row, duckdb_columns, load_config, now
 
 RUNS = 3 # número de corridas por query e formato (DuckDB e Athena), alterar se queremos mais corridas
 MINIMO_COBRADO = 10e6   # o Athena cobra pelo menos 10 MB por query
@@ -52,17 +50,6 @@ ATHENA_SOURCES = {
                 'movies': 'movies'},
     'parquet_part': {'ratings': 'ratings_part', 'movies': 'movies'},
 }
-
-
-def parse_args():
-    """Lê --dataset, --engines, --runs e as opções da AWS."""
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
-    parser.add_argument('--engines', nargs='+', choices=['duckdb', 'athena'], default=['duckdb', 'athena'])
-    parser.add_argument('--runs', type=int, default=RUNS, help=f'corridas por query e formato (por omissão: {RUNS})')
-    add_aws_args(parser)
-    return parser.parse_args()
 
 
 def duckdb_sources(cloud_dir):
@@ -178,21 +165,16 @@ def motores_diferentes(n_linhas):
 
 def main():
     """Corre cada query em cada motor e formato e regista os resultados em results/cloud_benchmarks.csv."""
-    args = parse_args()
-    cfg = load_config(args.dataset)
+    cfg = load_config()
     ds = cfg['dataset']
-    aws = aws_settings(cfg, args)
+    aws = aws_settings(cfg)
     cloud_dir = ROOT / 'data' / 'cloud' / aws['pasta']
-    usar_athena = 'athena' in args.engines and not args.dry_run
-    print(f"[cloud_benchmark] dataset={ds} motores={' '.join(args.engines)} corridas={args.runs}"
-          f"{' (dry-run: Athena não é contactado)' if args.dry_run else ''}")
+    print(f'[cloud_benchmark] dataset={ds} motores=duckdb athena corridas={RUNS}')
 
     if not cloud_dir.exists():
-        sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. '
-                 f'Corre primeiro: python scripts/05_prepare_cloud.py --dataset {ds}')
-    if usar_athena:
-        resolve_buckets(aws)
-        athena = Athena(aws)
+        sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. Corre primeiro o 05_prepare_cloud.py.')
+    resolve_buckets(aws)
+    athena = Athena(aws)
 
     queries = load_queries()
     fontes_duckdb = duckdb_sources(cloud_dir)
@@ -204,27 +186,21 @@ def main():
     # Para cada query e cada formato: primeiro o DuckDB (local) e depois o Athena (S3)
     for nome, athena_file, texto_duckdb, formatos in queries:
         for fmt in formatos:
-            if 'duckdb' in args.engines and not args.dry_run:
-                sql = Template(texto_duckdb).substitute(fontes_duckdb[fmt])
-                linha = linha_duckdb(ds, nome, fmt, sql, args.runs)
-                n_linhas[(nome, fmt, 'duckdb')] = linha['n_rows']
-                linhas_csv.append(linha)
+            sql = Template(texto_duckdb).substitute(fontes_duckdb[fmt])
+            linha = linha_duckdb(ds, nome, fmt, sql, RUNS)
+            n_linhas[(nome, fmt, 'duckdb')] = linha['n_rows']
+            linhas_csv.append(linha)
 
-            if 'athena' in args.engines:
-                sql = read_sql(athena_file, ATHENA_SOURCES[fmt])
-                if args.dry_run:
-                    print(f'\n-- athena {nome} [{fmt}]\n{sql};')
-                    continue
-                linha, scanned_bytes = linha_athena(athena, aws['database'], ds, nome, fmt, sql, args.runs)
-                # O Athena cobra no mínimo 10 MB por query, mesmo que leia menos
-                bytes_athena += max(scanned_bytes, MINIMO_COBRADO) * args.runs
-                n_linhas[(nome, fmt, 'athena')] = linha['n_rows']
-                linhas_csv.append(linha)
+            sql = read_sql(athena_file, ATHENA_SOURCES[fmt])
+            linha, scanned_bytes = linha_athena(athena, aws['database'], ds, nome, fmt, sql, RUNS)
+            # O Athena cobra no mínimo 10 MB por query, mesmo que leia menos
+            bytes_athena += max(scanned_bytes, MINIMO_COBRADO) * RUNS
+            n_linhas[(nome, fmt, 'athena')] = linha['n_rows']
+            linhas_csv.append(linha)
 
     diferentes = motores_diferentes(n_linhas)
-    if usar_athena:
-        print(f'[cloud_benchmark] Athena: {bytes_athena / 1e9:.2f} GB cobrados no total, '
-              f'custo estimado {bytes_athena / 1e12 * USD_POR_TB:.4f} USD')
+    print(f'[cloud_benchmark] Athena: {bytes_athena / 1e9:.2f} GB cobrados no total, '
+          f'custo estimado {bytes_athena / 1e12 * USD_POR_TB:.4f} USD')
 
     if diferentes:
         print('[cloud_benchmark] ERRO: n.º de linhas diferente entre os motores; '
