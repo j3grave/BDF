@@ -9,20 +9,31 @@ Objetivo:
 
 Entradas:
     data/cloud/<pasta>/ (criado pelo 05_prepare_cloud.py)
-    config.yaml (secção aws). Se os buckets estiverem a null, os nomes são derivados do ID da conta:
+    config.yaml (secção aws) e as opções --bucket-dados e --bucket-resultados. Se os buckets
+    não forem indicados, os nomes são derivados do ID da conta:
     bdf26-g1-dados-<conta> e bdf26-g1-resultados-<conta>.
-    Credenciais em .aws/credentials, na pasta do projeto (o run_pipeline.py pede-as no terminal).
+    Credenciais em ~/.aws/credentials (copiadas do Learner Lab em cada sessão), tem de estar na pasta .aws/credentials.
 
 Saídas:
     Buckets e objetos no S3. O ID da conta só aparece no ecrã.
 
 """
+import argparse
 import sys
 import time
 
-from athena_common import (MENSAGEM_CREDENCIAIS, account_id, aws_settings, boto3_session,
+from athena_common import (MENSAGEM_CREDENCIAIS, account_id, add_aws_args, aws_settings, boto3_session,
                            is_credentials_error, resolve_buckets)
-from common import ROOT, load_config
+from common import DATASETS, ROOT, load_config
+
+
+def parse_args():
+    """Lê --dataset (por omissão o do config.yaml) e as opções da AWS."""
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
+    add_aws_args(parser)
+    return parser.parse_args()
 
 
 def ensure_bucket(s3, bucket, region):
@@ -37,7 +48,7 @@ def ensure_bucket(s3, bucket, region):
         codigo = erro.response.get('Error', {}).get('Code', '')
         if codigo == '403':
             sys.exit(f'Erro: o bucket {bucket} existe mas pertence a outra conta (ou não tens acesso). '
-                     'Escolhe outro nome em config.yaml (bucket_dados / bucket_resultados).')
+                     'Escolhe outro nome com --bucket-dados/--bucket-resultados.')
         if codigo not in ('404', 'NoSuchBucket'):
             raise
     # Em us-east-1 a API não aceita LocationConstraint; nas outras regiões é obrigatório.
@@ -96,14 +107,16 @@ def sync_to_s3(s3, cloud_dir, bucket, pasta):
 
 def main():
     """Confirma as credenciais, cria os buckets e envia data/cloud/<pasta>/ para o S3."""
-    cfg = load_config()
+    args = parse_args()
+    cfg = load_config(args.dataset)
     ds = cfg['dataset']
-    aws = aws_settings(cfg)
+    aws = aws_settings(cfg, args)
     pasta = aws['pasta']
     cloud_dir = ROOT / 'data' / 'cloud' / pasta
     print(f'[upload_s3] dataset={ds} pasta={pasta} região={aws["region"]}')
     if not cloud_dir.exists():
-        sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. Corre primeiro o 05_prepare_cloud.py.')
+        sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. '
+                 f'Corre primeiro: python scripts/05_prepare_cloud.py --dataset {ds}')
 
     # account_id() termina com as instruções do Learner Lab se as credenciais faltarem ou tiverem expirado
     session = boto3_session(aws['region'])

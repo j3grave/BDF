@@ -6,7 +6,7 @@
 --
 -- Notas:
 -- - a tabela filme x dia (14,7 M linhas no 32M) só existe como CTE (d, h, v, ev) e nunca é devolvida;
--- - os suspeitos vêm de 10_flag_bots.sql (tabela ${flag_bots}): regra A; em_lote =
+-- - os suspeitos vêm de 10_flag_bots.sql (tabela ${flag_bots}): regra A ou regra B; em_lote =
 --   submissão em lote (conta-se à parte, não é bot);
 -- - LIMIT 100: devolve os 100 eventos com mais suspeitos, para inspeção. O total de eventos
 --   está na coluna total_eventos e no funil (filtros_eventos.sql);
@@ -39,7 +39,7 @@ WITH lim AS (SELECT 5 AS min_anterior, 5 AS min_utilizadores, 2.0 AS nota_baixa,
      e AS (SELECT * FROM ev WHERE tipo IS NOT NULL),
      p AS (SELECT r.movieId, r.timestamp // 86400 AS dia,
                   COUNT(DISTINCT r.userId)                                                  AS participantes,
-                  COUNT(DISTINCT CASE WHEN f.regra_a THEN r.userId END)        AS suspeitos,
+                  COUNT(DISTINCT CASE WHEN f.regra_a OR f.regra_b THEN r.userId END)        AS suspeitos,
                   COUNT(DISTINCT CASE WHEN f.submissao_lote THEN r.userId END)              AS em_lote
            FROM ${ratings} r
            JOIN e ON r.movieId = e.movieId AND r.timestamp // 86400 = e.dia

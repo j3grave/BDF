@@ -5,7 +5,7 @@ Objetivo:
     Correr o DDL de sql/athena/ddl/ para registar no Glue Data Catalog a base de dados
     movielens_<dataset> e uma tabela por pasta de data/cloud/<pasta>/ (já enviada para o S3).
     Usamos DDL escrito à mão em vez de um crawler do Glue para controlar os tipos ( ficam
-    exatamente os dos ficheiros). Antes de enviar o DDL, o script confirma, sem AWS, que as
+    exatamente os do manifesto). Antes de enviar o DDL, o script confirma, sem AWS, que as
     colunas e os tipos de cada CREATE TABLE coincidem com os ficheiros locais. Depois de
     criar as tabelas, confirma no Athena que o n.º de linhas de cada tabela (e de cada
     ano de ratings_part) é igual ao dos ficheiros locais.
@@ -23,26 +23,44 @@ Nota: Faz sentido usar o crawler, quando se desconhece os dados ou o esquema mud
 Entradas:
     sql/athena/ddl/*.sql                 DDL com os marcadores ${database}, ${bucket} e ${pasta}
     data/cloud/<pasta>/                  criado pelo 05_prepare_cloud.py (para comparar schemas e contagens)
-    config.yaml (secção aws)             região e buckets (se ficarem a null, derivados do ID da conta)
+    config.yaml (secção aws)             região e buckets (ou as opções da linha de comandos;
+                                         se ficarem a null, derivados do ID da conta)
 
 Saídas:
     Base de dados e tabelas no Glue Data Catalog. Localmente, só o resumo no ecrã.
     Termina com erro se o DDL não coincidir com os ficheiros ou se alguma contagem falhar.
-    As tabelas são sempre apagadas e criadas de novo, para o MSCK REPAIR TABLE ver o upload
-    (apagar uma tabela EXTERNAL não apaga os dados no S3).
+
+Como correr:
+    python scripts/07_athena_setup.py --dry-run                     sem AWS: verifica o DDL e mostra-o
+    python scripts/07_athena_setup.py --dataset small --recriar     apaga e recria as tabelas
+    python scripts/07_athena_setup.py --bucket-dados X --bucket-resultados Y
+    (por omissão usa o dataset do config.yaml; apagar uma tabela EXTERNAL não apaga os dados no S3)
+    Normalmente corre dentro do passo cloud: python run_pipeline.py --dataset small --steps cloud
 """
+import argparse
 import re
 import sys
 
 import duckdb
 
-from athena_common import (ATHENA_SQL, ATHENA_TYPES, Athena, AthenaError, aws_settings, count_of,
+from athena_common import (ATHENA_SQL, ATHENA_TYPES, Athena, AthenaError, add_aws_args, aws_settings, count_of,
                            counts_by_year, read_sql, resolve_buckets, schema_of)
-from common import ROOT, SCHEMAS, duckdb_columns, load_config
+from common import DATASETS, ROOT, SCHEMAS, duckdb_columns, load_config
 
 # Grupos: 1 = nome da tabela, 2 = colunas, 3 = colunas de partição (se existirem)
 RE_CREATE = re.compile(r'CREATE\s+EXTERNAL\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)'
                         r'(?:\s*PARTITIONED\s+BY\s*\((.*?)\))?', re.IGNORECASE | re.DOTALL)
+
+
+def parse_args():
+    """Lê --dataset (por omissão o do config.yaml), --recriar e as opções da AWS."""
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--dataset', choices=list(DATASETS), help='sobrepõe o valor de config.yaml')
+    parser.add_argument('--recriar', action='store_true',
+                        help='DROP TABLE antes de criar (não apaga os dados no S3)')
+    add_aws_args(parser)
+    return parser.parse_args()
 
 
 def parse_columns(texto):
@@ -122,11 +140,11 @@ def check_ddl(con, cloud_dir, instrucoes):
     return problemas
 
 
-def criar_tabelas(athena, aws, instrucoes):
+def criar_tabelas(athena, aws, instrucoes, recriar):
     """Corre o DDL no Athena: primeiro a base de dados, depois as tabelas dentro dela."""
     for ficheiro, table, sql in instrucoes:
-        # Apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
-        if table:
+        # --recriar: apaga a tabela antes de a criar (só o catálogo; os dados no S3 ficam)
+        if recriar and table:
             athena.run(f'DROP TABLE IF EXISTS `{table}`', aws['database'])
         # 00_database.sql cria a base de dados, por isso ainda não pode correr "dentro" dela
         if ficheiro.startswith('00_'):
@@ -177,17 +195,23 @@ def validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas):
 
 def main():
     """Verifica o DDL, cria a base de dados e as tabelas no Athena e valida as contagens."""
-    cfg = load_config()
-    aws = aws_settings(cfg)
+    args = parse_args()
+    cfg = load_config(args.dataset)
+    aws = aws_settings(cfg, args)
     cloud_dir = ROOT / 'data' / 'cloud' / aws['pasta']
-    print(f"[athena_setup] dataset={cfg['dataset']} base de dados={aws['database']} região={aws['region']}")
+    print(f"[athena_setup] dataset={cfg['dataset']} base de dados={aws['database']} "
+          f"região={aws['region']} {'(dry-run: sem AWS)' if args.dry_run else ''}")
 
     if not cloud_dir.exists():
-        sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. Corre primeiro o 05_prepare_cloud.py.')
-    resolve_buckets(aws)
+        sys.exit(f'Erro: não existe {cloud_dir.relative_to(ROOT)}. '
+                 f"Corre primeiro: python scripts/05_prepare_cloud.py --dataset {cfg['dataset']}")
+    if not args.dry_run:
+        resolve_buckets(aws)
 
-    # Valores que substituem ${database}, ${pasta} e ${bucket} no DDL
-    params = {'database': aws['database'], 'pasta': aws['pasta'], 'bucket': aws['bucket_dados']}
+    # Valores que substituem ${database}, ${pasta} e ${bucket} no DDL. No dry-run ainda não
+    # sabemos o bucket, por isso fica um texto de exemplo.
+    params = {'database': aws['database'], 'pasta': aws['pasta'],
+              'bucket': aws.get('bucket_dados') or '<bucket-dados>'}
     instrucoes = ddl_statements(params)
     tabelas = []
     for _, tabela, _ in instrucoes:
@@ -204,10 +228,15 @@ def main():
         sys.exit(1)
     print(f'  DDL verificado contra data/cloud/{aws["pasta"]}/: {len(tabelas)} tabelas, colunas e tipos iguais')
 
+    if args.dry_run:
+        for ficheiro, _, sql in instrucoes:
+            print(f'\n-- {ficheiro}\n{sql};')
+        return
+
     # 2 e 3. Base de dados, tabelas e validação das contagens
     athena = Athena(aws)
     try:
-        criar_tabelas(athena, aws, instrucoes)
+        criar_tabelas(athena, aws, instrucoes, args.recriar)
         custo_bytes = validar_contagens(athena, aws, con, cloud_dir, tabelas, problemas)
     except AthenaError as erro:
         sys.exit(f'[athena_setup] ERRO no Athena: {erro}')
